@@ -1,0 +1,19 @@
+name: Check for newline at end of file
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  eof-newline:
+    runs-on: ubuntu-24.04
+    name: check-for-newline
+    steps:
+      - name: Checkout
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+      - name: Check final newline
+        uses: qwrtln/check-final-newline@6dad6072a550df84ee0587219a2a4e3fabf84c9c # v1.0.0
