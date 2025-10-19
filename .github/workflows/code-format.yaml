@@ -9,7 +9,7 @@ on:
       - main
 
 jobs:
-  black-formatter:
+  python-black-formatter:
     timeout-minutes: 10
     runs-on: ubuntu-24.04
     name: python-formatter
