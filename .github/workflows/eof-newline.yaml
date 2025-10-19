@@ -10,8 +10,9 @@ on:
 
 jobs:
   eof-newline:
+    timeout-minutes: 1
     runs-on: ubuntu-24.04
-    name: check-for-newline
+    name: eof-newline-lint
     steps:
       - name: Checkout
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
