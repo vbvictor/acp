@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "acp"
-version = "0.1.0"
+version = "0.1.1"
 description = "Automatic Commit Pusher (acp)- CLI utility for automating pull request creation"
 readme = "README.md"
 requires-python = ">=3.9"

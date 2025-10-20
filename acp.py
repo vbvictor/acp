@@ -6,6 +6,8 @@ import random
 import subprocess
 import sys
 
+__version__ = "0.1.1"
+
 
 def run(cmd, quiet=False):
     """Run a command and return output."""
@@ -32,6 +34,7 @@ def show_help():
     print("  -h, --help            Show this help message")
     print("  -v, --verbose         Show detailed output")
     print("  -b, --body <text>     Custom PR body message")
+    print("  --version             Show version number")
     print()
     print("Examples:")
     print('  acp pr "fix: some typo"')
@@ -58,25 +61,46 @@ def create_pr(commit_message, verbose=False, body=""):
         print(f"Creating temporary branch: {temp_branch}")
 
     try:
-        # Get repo info first
-        repo_json = run(
-            ["gh", "repo", "view", "--json", "parent,nameWithOwner"], quiet=True
-        )
-        if not repo_json:
-            print("Error: Could not get repository info", file=sys.stderr)
-            sys.exit(1)
+        # Get origin remote URL to determine the fork repo
+        origin_url = run(["git", "remote", "get-url", "origin"], quiet=True)
 
-        repo_info = json.loads(repo_json)
-        current_repo = repo_info.get("nameWithOwner")
-        parent = repo_info.get("parent")
-        if parent:
-            upstream = parent.get("nameWithOwner")
+        # Extract owner/repo from git URL (handles both SSH and HTTPS)
+        # SSH: git@github.com:owner/repo.git
+        # HTTPS: https://github.com/owner/repo.git
+        if "github.com" in origin_url:
+            if origin_url.startswith("git@"):
+                # SSH format
+                fork_repo = origin_url.split(":")[1].replace(".git", "")
+            else:
+                # HTTPS format
+                fork_repo = "/".join(origin_url.split("/")[-2:]).replace(".git", "")
         else:
-            upstream = current_repo
-
-        if not upstream:
-            print("Error: Could not determine upstream repository", file=sys.stderr)
+            print("Error: Not a GitHub repository", file=sys.stderr)
             sys.exit(1)
+
+        # Check if there's an upstream remote
+        upstream_check = subprocess.run(
+            ["git", "remote", "get-url", "upstream"],
+            capture_output=True,
+            text=True
+        )
+
+        if upstream_check.returncode == 0:
+            # Has upstream remote, this is a fork
+            upstream_url = upstream_check.stdout.strip()
+            if "github.com" in upstream_url:
+                if upstream_url.startswith("git@"):
+                    upstream_repo = upstream_url.split(":")[1].replace(".git", "")
+                else:
+                    upstream_repo = "/".join(upstream_url.split("/")[-2:]).replace(".git", "")
+            else:
+                print("upstream repo is not a github.com repo")
+                sys.exit(1)
+            is_fork = True
+        else:
+            # No upstream remote, not a fork
+            upstream_repo = fork_repo
+            is_fork = False
 
         # Create branch and commit
         run(["git", "checkout", "-b", temp_branch], quiet=True)
@@ -86,29 +110,33 @@ def create_pr(commit_message, verbose=False, body=""):
 
         # Push
         if verbose:
-            print(f"Pushing {temp_branch} to {current_repo}...")
+            print(f"Pushing {temp_branch} to {fork_repo}...")
         run(["git", "push", "-u", "origin", temp_branch], quiet=True)
 
         if verbose:
-            print(f"Creating PR to: {upstream}")
+            print(f"Creating PR to: {upstream_repo}")
 
-        # Create PR
-        pr_url = run(
-            [
-                "gh",
-                "pr",
-                "create",
-                "--repo",
-                upstream,
-                "--title",
-                commit_message,
-                "--body",
-                body,
-                "--head",
-                temp_branch,
-            ],
-            quiet=True,
-        )
+        # Create PR with correct head format for forks
+        gh_cmd = [
+            "gh",
+            "pr",
+            "create",
+            "--repo",
+            upstream_repo,
+            "--title",
+            commit_message,
+            "--body",
+            body,
+        ]
+
+        # For forks, we need to specify head as "username:branch"
+        if is_fork:
+            fork_owner = fork_repo.split("/")[0]
+            gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
+        else:
+            gh_cmd.extend(["--head", temp_branch])
+
+        pr_url = run(gh_cmd, quiet=True)
 
         # Go back
         run(["git", "checkout", original_branch], quiet=True)
@@ -152,8 +180,15 @@ def main():
         "-b", "--body", type=str, default="", help="Custom PR body message"
     )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--version", action="store_true", help=argparse.SUPPRESS
+    )
 
     args = parser.parse_args()
+
+    if args.version:
+        print(f"acp version {__version__}")
+        sys.exit(0)
 
     if args.help or not args.command:
         show_help()
