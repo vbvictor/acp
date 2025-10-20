@@ -25,22 +25,24 @@ def run_check(cmd):
 
 def show_help():
     """Show help message."""
-    print("usage: acp pr <commit message> [-b <pr body>]")
+    print("usage: acp pr <commit message> [-v] [-b <body>] [-i]")
     print()
     print("Automatic Commit Pusher - create PRs in one command")
     print()
     print("Options:")
     print("  -h, --help            Show this help message")
+    print("  --version             Show version number")
     print("  -v, --verbose         Show detailed output")
     print("  -b, --body <text>     Custom PR body message")
-    print("  --version             Show version number")
+    print("  -i, --interactive     Show PR creation URL instead of creating PR")
     print()
     print("Examples:")
     print('  acp pr "fix: some typo"')
     print('  acp pr "fix: bug" -b "Closes issue #123"')
+    print('  acp pr "feat: new" -i              # Review PR before creating')
 
 
-def create_pr(commit_message, verbose=False, body=""):
+def create_pr(commit_message, verbose=False, body="", interactive=False):
     """Create a PR with staged changes."""
     # Get current state
     original_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
@@ -112,37 +114,55 @@ def create_pr(commit_message, verbose=False, body=""):
             print(f"Pushing {temp_branch} to {fork_repo}...")
         run(["git", "push", "-u", "origin", temp_branch], quiet=True)
 
-        if verbose:
-            print(f"Creating PR to: {upstream_repo}")
+        if interactive:
+            # Build GitHub compare URL for manual PR creation
+            upstream_base = upstream_repo.split("/")[-1]  # repo name
+            if is_fork:
+                fork_owner = fork_repo.split("/")[0]
+                # Format: https://github.com/upstream/repo/compare/main...fork-owner:repo:branch?expand=1
+                compare_url = f"https://github.com/{upstream_repo}/compare/main...{fork_owner}:{upstream_base}:{temp_branch}?expand=1"
+            else:
+                # Format: https://github.com/owner/repo/compare/main...branch?expand=1
+                compare_url = f"https://github.com/{upstream_repo}/compare/main...{temp_branch}?expand=1"
 
-        # Create PR with correct head format for forks
-        gh_cmd = [
-            "gh",
-            "pr",
-            "create",
-            "--repo",
-            upstream_repo,
-            "--title",
-            commit_message,
-            "--body",
-            body,
-        ]
+            # Go back
+            run(["git", "checkout", original_branch], quiet=True)
+            if verbose:
+                print(f"Switched back to original branch: {original_branch}")
 
-        # For forks, we need to specify head as "username:branch"
-        if is_fork:
-            fork_owner = fork_repo.split("/")[0]
-            gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
+            print(f"PR creation URL: {compare_url}")
         else:
-            gh_cmd.extend(["--head", temp_branch])
+            if verbose:
+                print(f"Creating PR to: {upstream_repo}")
 
-        pr_url = run(gh_cmd, quiet=True)
+            # Create PR with correct head format for forks
+            gh_cmd = [
+                "gh",
+                "pr",
+                "create",
+                "--repo",
+                upstream_repo,
+                "--title",
+                commit_message,
+                "--body",
+                body,
+            ]
 
-        # Go back
-        run(["git", "checkout", original_branch], quiet=True)
-        if verbose:
-            print(f"Switched back to original branch: {original_branch}")
+            # For forks, we need to specify head as "username:branch"
+            if is_fork:
+                fork_owner = fork_repo.split("/")[0]
+                gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
+            else:
+                gh_cmd.extend(["--head", temp_branch])
 
-        print(f"PR created: {pr_url}")
+            pr_url = run(gh_cmd, quiet=True)
+
+            # Go back
+            run(["git", "checkout", original_branch], quiet=True)
+            if verbose:
+                print(f"Switched back to original branch: {original_branch}")
+
+            print(f"PR created: {pr_url}")
 
     except Exception:
         # Try to go back on error
@@ -178,6 +198,9 @@ def main():
     parser.add_argument(
         "-b", "--body", type=str, default="", help="Custom PR body message"
     )
+    parser.add_argument(
+        "-i", "--interactive", action="store_true", help="Show PR creation URL"
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
@@ -196,7 +219,7 @@ def main():
         sys.exit(1)
 
     try:
-        create_pr(args.message, verbose=args.verbose, body=args.body)
+        create_pr(args.message, verbose=args.verbose, body=args.body, interactive=args.interactive)
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
         sys.exit(130)

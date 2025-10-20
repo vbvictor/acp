@@ -212,6 +212,93 @@ class TestCreatePR:
             acp.create_pr("test commit", verbose=False, body="")
         assert exc.value.code == 1
 
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_interactive_non_fork(self, mock_run_check, mock_run, mock_subprocess):
+        """Test interactive mode on non-fork repo."""
+        mock_run_check.return_value = False
+
+        # No upstream remote
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            None,  # git checkout original
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", interactive=True)
+
+        # Should not call gh pr create (only 7 calls, not 8)
+        assert mock_run.call_count == 7
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_interactive_fork(self, mock_run_check, mock_run, mock_subprocess, capsys):
+        """Test interactive mode on fork with correct URL format."""
+        mock_run_check.return_value = False
+
+        # Mock upstream remote exists
+        mock_subprocess.return_value = mock.Mock(
+            returncode=0,
+            stdout="git@github.com:upstream/repo.git\n"
+        )
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:fork-owner/repo.git",  # origin (fork)
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            None,  # git checkout original
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", interactive=True)
+
+        # Capture output and verify URL format
+        captured = capsys.readouterr()
+        assert "PR creation URL:" in captured.out
+        assert "github.com/upstream/repo/compare/main...fork-owner:repo:" in captured.out
+        assert "?expand=1" in captured.out
+
+        # Should not call gh pr create
+        assert mock_run.call_count == 7
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_interactive_non_fork_url(self, mock_run_check, mock_run, mock_subprocess, capsys):
+        """Test interactive mode URL format for non-fork."""
+        mock_run_check.return_value = False
+
+        # No upstream remote
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "https://github.com/user/myrepo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            None,  # git checkout original
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", interactive=True)
+
+        # Verify URL format for non-fork
+        captured = capsys.readouterr()
+        assert "PR creation URL:" in captured.out
+        assert "github.com/user/myrepo/compare/main...pr/" in captured.out
+        assert "?expand=1" in captured.out
+
 
 class TestMain:
     """Test the main() function."""
@@ -253,7 +340,7 @@ class TestMain:
         with mock.patch.object(sys, "argv", ["acp", "pr", "test message"]):
             acp.main()
             mock_create_pr.assert_called_once_with(
-                "test message", verbose=False, body=""
+                "test message", verbose=False, body="", interactive=False
             )
 
     @mock.patch("acp.create_pr")
@@ -261,7 +348,7 @@ class TestMain:
         """Test verbose flag is passed."""
         with mock.patch.object(sys, "argv", ["acp", "pr", "test", "-v"]):
             acp.main()
-            mock_create_pr.assert_called_once_with("test", verbose=True, body="")
+            mock_create_pr.assert_called_once_with("test", verbose=True, body="", interactive=False)
 
     @mock.patch("acp.create_pr")
     def test_keyboard_interrupt(self, mock_create_pr):
