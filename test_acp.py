@@ -151,7 +151,9 @@ class TestMain:
         """Test valid pr command."""
         with mock.patch.object(sys, "argv", ["acp", "pr", "test message"]):
             acp.main()
-            mock_create_pr.assert_called_once_with("test message", verbose=False, body="")
+            mock_create_pr.assert_called_once_with(
+                "test message", verbose=False, body=""
+            )
 
     @mock.patch("acp.create_pr")
     def test_verbose_flag(self, mock_create_pr):
