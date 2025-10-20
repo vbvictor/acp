@@ -6,6 +6,7 @@ import random
 import subprocess
 import sys
 
+
 def run(cmd, quiet=False):
     """Run a command and return output."""
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -57,7 +58,9 @@ def create_pr(commit_message, verbose=False):
 
     try:
         # Get repo info first
-        repo_json = run(["gh", "repo", "view", "--json", "parent,nameWithOwner"], quiet=True)
+        repo_json = run(
+            ["gh", "repo", "view", "--json", "parent,nameWithOwner"], quiet=True
+        )
         if not repo_json:
             print("Error: Could not get repository info", file=sys.stderr)
             sys.exit(1)
@@ -89,13 +92,22 @@ def create_pr(commit_message, verbose=False):
             print(f"Creating PR to: {upstream}")
 
         # Create PR
-        pr_url = run([
-            "gh", "pr", "create",
-            "--repo", upstream,
-            "--title", commit_message,
-            "--body", "",
-            "--head", temp_branch
-        ], quiet=True)
+        pr_url = run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--repo",
+                upstream,
+                "--title",
+                commit_message,
+                "--body",
+                "",
+                "--head",
+                temp_branch,
+            ],
+            quiet=True,
+        )
 
         # Go back
         run(["git", "checkout", original_branch], quiet=True)
@@ -109,10 +121,13 @@ def create_pr(commit_message, verbose=False):
         try:
             current = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                capture_output=True, text=True
+                capture_output=True,
+                text=True,
             ).stdout.strip()
             if current != original_branch:
-                subprocess.run(["git", "checkout", original_branch], capture_output=True)
+                subprocess.run(
+                    ["git", "checkout", original_branch], capture_output=True
+                )
         except Exception:
             pass
         raise
@@ -129,7 +144,9 @@ def main():
 
     parser.add_argument("command", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument("message", nargs="?", help=argparse.SUPPRESS)
-    parser.add_argument("-v", "--verbose", action="store_true", help="Show detailed output")
+    parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
