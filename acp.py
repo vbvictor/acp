@@ -219,7 +219,12 @@ def main():
         sys.exit(1)
 
     try:
-        create_pr(args.message, verbose=args.verbose, body=args.body, interactive=args.interactive)
+        create_pr(
+            args.message,
+            verbose=args.verbose,
+            body=args.body,
+            interactive=args.interactive,
+        )
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
         sys.exit(130)
