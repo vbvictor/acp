@@ -24,20 +24,21 @@ def run_check(cmd):
 
 def show_help():
     """Show help message."""
-    print("usage: acp pr <commit message> [-v]")
+    print("usage: acp pr <commit message> [-b <pr body>]")
     print()
     print("Automatic Commit Pusher - create PRs in one command")
     print()
     print("Options:")
-    print("  -h, --help     Show this help message")
-    print("  -v, --verbose  Show detailed output")
+    print("  -h, --help            Show this help message")
+    print("  -v, --verbose         Show detailed output")
+    print("  -b, --body <text>     Custom PR body message")
     print()
     print("Examples:")
     print('  acp pr "fix: some typo"')
-    print('  acp pr "feat: add new feature" -v')
+    print('  acp pr "fix: bug" -b "Closes issue #123"')
 
 
-def create_pr(commit_message, verbose=False):
+def create_pr(commit_message, verbose=False, body=""):
     """Create a PR with staged changes."""
     # Get current state
     original_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
@@ -102,7 +103,7 @@ def create_pr(commit_message, verbose=False):
                 "--title",
                 commit_message,
                 "--body",
-                "",
+                body,
                 "--head",
                 temp_branch,
             ],
@@ -147,6 +148,9 @@ def main():
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
+    parser.add_argument(
+        "-b", "--body", type=str, default="", help="Custom PR body message"
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
@@ -160,7 +164,7 @@ def main():
         sys.exit(1)
 
     try:
-        create_pr(args.message, verbose=args.verbose)
+        create_pr(args.message, verbose=args.verbose, body=args.body)
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
         sys.exit(130)
