@@ -80,9 +80,7 @@ def create_pr(commit_message, verbose=False, body=""):
 
         # Check if there's an upstream remote
         upstream_check = subprocess.run(
-            ["git", "remote", "get-url", "upstream"],
-            capture_output=True,
-            text=True
+            ["git", "remote", "get-url", "upstream"], capture_output=True, text=True
         )
 
         if upstream_check.returncode == 0:
@@ -92,7 +90,9 @@ def create_pr(commit_message, verbose=False, body=""):
                 if upstream_url.startswith("git@"):
                     upstream_repo = upstream_url.split(":")[1].replace(".git", "")
                 else:
-                    upstream_repo = "/".join(upstream_url.split("/")[-2:]).replace(".git", "")
+                    upstream_repo = "/".join(upstream_url.split("/")[-2:]).replace(
+                        ".git", ""
+                    )
             else:
                 print("upstream repo is not a github.com repo")
                 sys.exit(1)
@@ -180,9 +180,7 @@ def main():
         "-b", "--body", type=str, default="", help="Custom PR body message"
     )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--version", action="store_true", help=argparse.SUPPRESS
-    )
+    parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
 

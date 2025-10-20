@@ -122,8 +122,7 @@ class TestCreatePR:
 
         # Mock upstream remote exists
         mock_subprocess.return_value = mock.Mock(
-            returncode=0,
-            stdout="git@github.com:upstream/repo.git\n"
+            returncode=0, stdout="git@github.com:upstream/repo.git\n"
         )
 
         mock_run.side_effect = [
@@ -153,8 +152,7 @@ class TestCreatePR:
 
         # Mock upstream remote exists
         mock_subprocess.return_value = mock.Mock(
-            returncode=0,
-            stdout="https://github.com/upstream/repo.git\n"
+            returncode=0, stdout="https://github.com/upstream/repo.git\n"
         )
 
         mock_run.side_effect = [
@@ -194,14 +192,15 @@ class TestCreatePR:
     @mock.patch("subprocess.run")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_upstream_not_github(self, mock_run_check, mock_run, mock_subprocess):
+    def test_create_pr_upstream_not_github(
+        self, mock_run_check, mock_run, mock_subprocess
+    ):
         """Test PR creation fails when upstream is not GitHub."""
         mock_run_check.return_value = False
 
         # Mock upstream remote exists but not GitHub
         mock_subprocess.return_value = mock.Mock(
-            returncode=0,
-            stdout="git@gitlab.com:upstream/repo.git\n"
+            returncode=0, stdout="git@gitlab.com:upstream/repo.git\n"
         )
 
         mock_run.side_effect = [
