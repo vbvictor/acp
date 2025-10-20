@@ -52,6 +52,16 @@ With a PR body message and verbose output:
 acp pr "fix: resolve issue" -b "Closes #123" -v
 ```
 
+Review PR before creating (interactive mode):
+
+```bash
+acp pr "feat: new feature" -i
+PR creation URL: https://github.com/owner/repo/compare/main...pr/username/1234567890123456?expand=1
+```
+
+The `-i` (`--interactive`) flag skips automatic PR creation and instead gives you a GitHub link. \
+This lets you review the changes, edit the PR title/description, and create it manually.
+
 ### What it does
 
 When you run `acp pr "your commit message"`:
