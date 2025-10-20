@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import json
 import sys
 from unittest import mock
 import pytest
@@ -56,20 +55,24 @@ class TestCreatePR:
         mock_run_check.return_value = True  # No staged changes
 
         with pytest.raises(SystemExit) as exc:
-            acp.create_pr("test commit", verbose=False)
+            acp.create_pr("test commit", verbose=False, body="")
         assert exc.value.code == 1
 
+    @mock.patch("subprocess.run")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_success(self, mock_run_check, mock_run):
-        """Test successful PR creation."""
+    def test_create_pr_not_fork_ssh(self, mock_run_check, mock_run, mock_subprocess):
+        """Test PR creation in non-fork repo with SSH URL."""
         mock_run_check.return_value = False  # Has staged changes
+
+        # Mock subprocess.run for upstream check (should fail - no upstream)
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
 
         # Mock all the run() calls in order
         mock_run.side_effect = [
             "main",  # get current branch
             "testuser",  # get gh username
-            '{"nameWithOwner":"user/repo","parent":null}',  # gh repo view
+            "git@github.com:user/repo.git",  # git remote get-url origin
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
@@ -77,39 +80,137 @@ class TestCreatePR:
             None,  # git checkout original
         ]
 
-        acp.create_pr("test commit", verbose=False)
+        acp.create_pr("test commit", verbose=False, body="")
 
-        # Verify the PR was created
-        assert mock_run.call_count == 8
+        # Verify PR was created to same repo (not a fork)
+        calls = mock_run.call_args_list
+        pr_create_call = calls[6]
+        # Should use --head branch (not owner:branch)
+        assert "--head" in str(pr_create_call)
 
+    @mock.patch("subprocess.run")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_fork(self, mock_run_check, mock_run):
-        """Test PR creation on a fork."""
+    def test_create_pr_not_fork_https(self, mock_run_check, mock_run, mock_subprocess):
+        """Test PR creation in non-fork repo with HTTPS URL."""
         mock_run_check.return_value = False
 
-        repo_info = {
-            "nameWithOwner": "user/repo",
-            "parent": {"nameWithOwner": "upstream/repo"},
-        }
+        # No upstream remote
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
 
         mock_run.side_effect = [
             "main",
             "testuser",
-            json.dumps(repo_info),
+            "https://github.com/user/repo.git",  # HTTPS origin URL
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            "https://github.com/user/repo/pull/1",
+            None,
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="")
+        assert mock_run.call_count == 8
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_fork_ssh(self, mock_run_check, mock_run, mock_subprocess):
+        """Test PR creation on a fork with SSH URLs."""
+        mock_run_check.return_value = False
+
+        # Mock upstream remote exists
+        mock_subprocess.return_value = mock.Mock(
+            returncode=0, stdout="git@github.com:upstream/repo.git\n"
+        )
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:fork-owner/repo.git",  # origin (fork)
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
             "https://github.com/upstream/repo/pull/1",
-            None,  # git checkout original
+            None,
         ]
 
-        acp.create_pr("test commit", verbose=False)
+        acp.create_pr("test commit", verbose=False, body="")
 
-        # Check that PR was created to upstream repo
+        # Check that PR was created with fork-owner:branch format
         calls = mock_run.call_args_list
         pr_create_call = calls[6]
-        assert "upstream/repo" in pr_create_call[0][0]
+        assert "fork-owner:" in str(pr_create_call)
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_fork_https(self, mock_run_check, mock_run, mock_subprocess):
+        """Test PR creation on a fork with HTTPS URLs."""
+        mock_run_check.return_value = False
+
+        # Mock upstream remote exists
+        mock_subprocess.return_value = mock.Mock(
+            returncode=0, stdout="https://github.com/upstream/repo.git\n"
+        )
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "https://github.com/fork-owner/repo.git",  # origin (fork)
+            None,
+            None,
+            None,
+            "https://github.com/upstream/repo/pull/1",
+            None,
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="")
+
+        # Verify fork logic was used
+        calls = mock_run.call_args_list
+        pr_create_call = calls[6]
+        assert "fork-owner:" in str(pr_create_call)
+
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_not_github(self, mock_run_check, mock_run):
+        """Test PR creation fails for non-GitHub repos."""
+        mock_run_check.return_value = False
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@gitlab.com:user/repo.git",  # Not GitHub
+        ]
+
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test commit", verbose=False, body="")
+        assert exc.value.code == 1
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_upstream_not_github(
+        self, mock_run_check, mock_run, mock_subprocess
+    ):
+        """Test PR creation fails when upstream is not GitHub."""
+        mock_run_check.return_value = False
+
+        # Mock upstream remote exists but not GitHub
+        mock_subprocess.return_value = mock.Mock(
+            returncode=0, stdout="git@gitlab.com:upstream/repo.git\n"
+        )
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:fork/repo.git",  # origin is GitHub
+        ]
+
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test commit", verbose=False, body="")
+        assert exc.value.code == 1
 
 
 class TestMain:
