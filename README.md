@@ -27,7 +27,7 @@ When you run `acp pr <commit message>`, `acp` will:
 4. Push the branch to origin repo
 5. Create a pull request to upstream if present of origin otherwise.
 6. Switch you back to your original branch
-7. Prints the PR URL
+7. Print the PR URL
 
 ## Getting Started
 
