@@ -17,6 +17,18 @@ PR created: https://github.com/vbvictor/acp/pull/12
 
 That's it. PR created, you're back on your original branch.
 
+## What it does
+
+When you run `acp pr <commit message>`, `acp` will:
+
+1. Validate you have staged changes
+2. Create a temporary branch `pr/{your-github-username}/{random-16-digits}`
+3. Commit your staged changes with your message
+4. Push the branch to origin repo
+5. Create a pull request to upstream if present of origin otherwise.
+6. Switch you back to your original branch
+7. Print the PR URL
+
 ## Getting Started
 
 **Prerequisites:** [Python 3.9+][python], [Git][git], and [GitHub CLI (gh)][gh]
@@ -52,29 +64,14 @@ With a PR body message and verbose output:
 acp pr "fix: resolve issue" -b "Closes #123" -v
 ```
 
-Review PR before creating (interactive mode):
+Review PR before final submission (interactive mode):
 
 ```bash
 acp pr "feat: new feature" -i
-PR creation URL: https://github.com/owner/repo/compare/main...pr/username/1234567890123456?expand=1
 ```
 
 The `-i` (`--interactive`) flag skips automatic PR creation and instead gives you a GitHub link. \
-This lets you review the changes, edit the PR title/description, and create it manually.
-
-### What it does
-
-When you run `acp pr "your commit message"`:
-
-1. Validates you have staged changes
-2. Creates a temporary branch `pr/{your-github-username}/{random-16-digits}`
-3. Commits your staged changes with your message
-4. Pushes the branch to origin
-5. Creates a pull request via GitHub CLI (detects forks automatically)
-6. Switches you back to your original branch
-7. Prints the PR URL
-
-The temporary branch naming lets you create multiple PRs from the same working branch without conflicts.
+This lets you review the changes, edit the PR title/description, and publish it manually.
 
 ## Contributing
 
