@@ -40,6 +40,7 @@ def show_help():
     print('  acp pr "fix: some typo" -i')
     print('  acp pr "fix: bug" -b "Closes issue #123"')
 
+
 def create_pr(commit_message, verbose=False, body="", interactive=False):
     """Create a PR with staged changes."""
     # Get current state
