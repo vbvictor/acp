@@ -363,9 +363,11 @@ class TestCreatePR:
             None,  # git checkout original
         ]
 
-        acp.create_pr("test commit", verbose=False, body="", merge=True)
+        acp.create_pr(
+            "test commit", verbose=False, body="", merge=True, merge_method="squash"
+        )
 
-        # Verify subprocess.run was called for merge
+        # Verify subprocess.run was called for merge with squash
         merge_calls = [
             call
             for call in mock_subprocess.call_args_list
@@ -375,6 +377,7 @@ class TestCreatePR:
         merge_call = merge_calls[0]
         assert "gh" in str(merge_call)
         assert "merge" in str(merge_call)
+        assert "--squash" in str(merge_call)
         assert "--delete-branch" in str(merge_call)
 
         # Verify output message
@@ -414,9 +417,15 @@ class TestCreatePR:
             None,  # git checkout original
         ]
 
-        acp.create_pr("test commit", verbose=False, body="", auto_merge=True)
+        acp.create_pr(
+            "test commit",
+            verbose=False,
+            body="",
+            auto_merge=True,
+            merge_method="squash",
+        )
 
-        # Verify auto-merge was called
+        # Verify auto-merge was called with squash
         merge_calls = [
             call
             for call in mock_subprocess.call_args_list
@@ -427,6 +436,7 @@ class TestCreatePR:
         assert "gh" in str(merge_call)
         assert "merge" in str(merge_call)
         assert "--auto" in str(merge_call)
+        assert "--squash" in str(merge_call)
         assert "--delete-branch" in str(merge_call)
 
         # Verify output message
@@ -466,11 +476,13 @@ class TestCreatePR:
             None,  # git checkout original
         ]
 
-        acp.create_pr("test commit", verbose=True, body="", merge=True)
+        acp.create_pr(
+            "test commit", verbose=True, body="", merge=True, merge_method="squash"
+        )
 
-        # Verify verbose output includes merge step
+        # Verify verbose output includes merge step with method
         captured = capsys.readouterr()
-        assert "Merging PR immediately..." in captured.out
+        assert "Merging PR immediately (method: squash)" in captured.out
         assert "merged!" in captured.out
 
     @mock.patch("subprocess.run")
@@ -511,7 +523,9 @@ class TestCreatePR:
         ]
 
         with pytest.raises(SystemExit) as exc:
-            acp.create_pr("test commit", verbose=False, body="", merge=True)
+            acp.create_pr(
+                "test commit", verbose=False, body="", merge=True, merge_method="squash"
+            )
 
         assert exc.value.code == 1
 
@@ -559,7 +573,13 @@ class TestCreatePR:
         ]
 
         with pytest.raises(SystemExit) as exc:
-            acp.create_pr("test commit", verbose=False, body="", auto_merge=True)
+            acp.create_pr(
+                "test commit",
+                verbose=False,
+                body="",
+                auto_merge=True,
+                merge_method="squash",
+            )
 
         assert exc.value.code == 1
 
@@ -616,6 +636,7 @@ class TestMain:
                 interactive=False,
                 merge=False,
                 auto_merge=False,
+                merge_method="squash",
             )
 
     @mock.patch("acp.create_pr")
@@ -630,6 +651,7 @@ class TestMain:
                 interactive=False,
                 merge=False,
                 auto_merge=False,
+                merge_method="squash",
             )
 
     @mock.patch("acp.create_pr")
@@ -644,6 +666,7 @@ class TestMain:
                 interactive=False,
                 merge=True,
                 auto_merge=False,
+                merge_method="squash",
             )
 
     @mock.patch("acp.create_pr")
@@ -658,7 +681,111 @@ class TestMain:
                 interactive=False,
                 merge=False,
                 auto_merge=True,
+                merge_method="squash",
             )
+
+    @mock.patch("acp.create_pr")
+    def test_merge_method_flag(self, mock_create_pr):
+        """Test --merge-method flag is passed."""
+        with mock.patch.object(
+            sys, "argv", ["acp", "pr", "test", "--merge", "--merge-method", "rebase"]
+        ):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=True,
+                auto_merge=False,
+                merge_method="rebase",
+            )
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_merge_method_merge(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test --merge with merge method."""
+        mock_run_check.return_value = False
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:user/repo.git",
+            None,
+            None,
+            None,
+            "https://github.com/user/repo/pull/1",
+            None,
+        ]
+
+        acp.create_pr("test", verbose=False, body="", merge=True, merge_method="merge")
+
+        # Verify --merge flag is used
+        merge_calls = [
+            c for c in mock_subprocess.call_args_list if "merge" in str(c[0][0])
+        ]
+        assert len(merge_calls) > 0
+        assert "--merge" in str(merge_calls[0])
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_merge_method_rebase(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test --merge with rebase method."""
+        mock_run_check.return_value = False
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:user/repo.git",
+            None,
+            None,
+            None,
+            "https://github.com/user/repo/pull/1",
+            None,
+        ]
+
+        acp.create_pr("test", verbose=False, body="", merge=True, merge_method="rebase")
+
+        # Verify --rebase flag is used
+        merge_calls = [
+            c for c in mock_subprocess.call_args_list if "merge" in str(c[0][0])
+        ]
+        assert len(merge_calls) > 0
+        assert "--rebase" in str(merge_calls[0])
+
+    def test_invalid_merge_method(self):
+        """Test invalid merge method raises error."""
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr(
+                "test", verbose=False, body="", merge=True, merge_method="invalid"
+            )
+        assert exc.value.code == 1
 
     @mock.patch("acp.create_pr")
     def test_keyboard_interrupt(self, mock_create_pr):

@@ -25,22 +25,28 @@ def run_check(cmd):
 
 def show_help():
     """Show help message."""
-    print("usage: acp pr <commit message> [-b <body>] [-i] [--merge|--auto-merge]")
+    print(
+        "usage: acp pr <commit message> [-b <body>] [-i] [--merge|--auto-merge] [--merge-method <method>]"
+    )
     print()
     print("acp - create PRs in one command")
     print()
     print("Options:")
-    print("  -b, --body <text>     Custom PR body message")
-    print("  -i, --interactive     Show PR creation URL instead of creating PR")
-    print("  -v, --verbose         Show detailed output")
-    print("  --merge               Merge PR immediately after creation")
-    print("  --auto-merge          Enable GitHub auto-merge after PR creation")
-    print("  --version             Show version number")
-    print("  -h, --help            Show this help message")
+    print("  -b, --body <text>           Custom PR body message")
+    print("  -i, --interactive           Show PR creation URL instead of creating PR")
+    print("  -v, --verbose               Show detailed output")
+    print("  --merge                     Merge PR immediately after creation")
+    print("  --auto-merge                Enable GitHub auto-merge after PR creation")
+    print(
+        "  --merge-method <method>     Merge method: squash (default), merge, or rebase"
+    )
+    print("  --version                   Show version number")
+    print("  -h, --help                  Show this help message")
     print()
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
     print('  acp pr "fix: urgent" -b "Closes issue #123" --merge')
+    print('  acp pr "feat: feature" --auto-merge --merge-method rebase')
 
 
 def create_pr(
@@ -50,6 +56,7 @@ def create_pr(
     interactive=False,
     merge=False,
     auto_merge=False,
+    merge_method="squash",
 ):
     """Create a PR with staged changes."""
     # Validate merge flags
@@ -63,6 +70,15 @@ def create_pr(
     if merge and auto_merge:
         print(
             "Error: Cannot use --merge and --auto-merge together",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Validate merge method
+    valid_methods = ["merge", "squash", "rebase"]
+    if merge_method not in valid_methods:
+        print(
+            f"Error: Invalid merge method '{merge_method}'. Must be one of: {', '.join(valid_methods)}",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -187,10 +203,19 @@ def create_pr(
             # Handle merge options after switching back
             if merge:
                 if verbose:
-                    print("Merging PR immediately...")
+                    print(f"Merging PR immediately (method: {merge_method})...")
 
+                # Build merge command with the specified method
+                merge_cmd = [
+                    "gh",
+                    "pr",
+                    "merge",
+                    pr_url,
+                    f"--{merge_method}",
+                    "--delete-branch",
+                ]
                 merge_result = subprocess.run(
-                    ["gh", "pr", "merge", pr_url, "--merge", "--delete-branch"],
+                    merge_cmd,
                     capture_output=True,
                     text=True,
                 )
@@ -206,18 +231,22 @@ def create_pr(
                 print(f"PR {commit_message} merged!")
             elif auto_merge:
                 if verbose:
-                    print("Enabling auto-merge (will merge when checks pass)...")
+                    print(
+                        f"Enabling auto-merge (method: {merge_method}, will merge when checks pass)..."
+                    )
 
+                # Build auto-merge command with the specified method
+                merge_cmd = [
+                    "gh",
+                    "pr",
+                    "merge",
+                    pr_url,
+                    "--auto",
+                    f"--{merge_method}",
+                    "--delete-branch",
+                ]
                 merge_result = subprocess.run(
-                    [
-                        "gh",
-                        "pr",
-                        "merge",
-                        pr_url,
-                        "--auto",
-                        "--merge",
-                        "--delete-branch",
-                    ],
+                    merge_cmd,
                     capture_output=True,
                     text=True,
                 )
@@ -298,6 +327,13 @@ def main():
         action="store_true",
         help="Enable auto-merge (merge when checks pass)",
     )
+    parser.add_argument(
+        "--merge-method",
+        type=str,
+        default="squash",
+        choices=["merge", "squash", "rebase"],
+        help="Merge method: squash (default), merge, or rebase",
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
@@ -323,6 +359,7 @@ def main():
             interactive=args.interactive,
             merge=args.merge,
             auto_merge=args.auto_merge,
+            merge_method=args.merge_method,
         )
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
