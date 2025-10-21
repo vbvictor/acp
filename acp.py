@@ -25,21 +25,20 @@ def run_check(cmd):
 
 def show_help():
     """Show help message."""
-    print("usage: acp pr <commit message> [-v] [-b <body>] [-i]")
+    print("usage: acp pr <commit message> [-b <body>] [-i]")
     print()
-    print("Automatic Commit Pusher - create PRs in one command")
+    print("acp - create PRs in one command")
     print()
     print("Options:")
-    print("  -h, --help            Show this help message")
-    print("  --version             Show version number")
-    print("  -v, --verbose         Show detailed output")
     print("  -b, --body <text>     Custom PR body message")
     print("  -i, --interactive     Show PR creation URL instead of creating PR")
+    print("  -v, --verbose         Show detailed output")
+    print("  -h, --help            Show this help message")
+    print("  --version             Show version number")
     print()
     print("Examples:")
-    print('  acp pr "fix: some typo"')
+    print('  acp pr "fix: some typo" -i')
     print('  acp pr "fix: bug" -b "Closes issue #123"')
-    print('  acp pr "feat: new" -i              # Review PR before creating')
 
 
 def create_pr(commit_message, verbose=False, body="", interactive=False):
@@ -186,7 +185,7 @@ def main():
     parser = argparse.ArgumentParser(
         prog="acp",
         usage="acp pr <commit message>",
-        description="Automatic Commit Pusher - create PRs in one command",
+        description="acp - create PRs in one command",
         add_help=False,
     )
 
