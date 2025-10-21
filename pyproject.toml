@@ -34,3 +34,7 @@ acp = "acp:main"
 
 [tool.setuptools]
 py-modules = ["acp"]
+
+[tool.ruff]
+# Ignore line length rules (E501) - using black for formatting
+ignore = ["E501"]
