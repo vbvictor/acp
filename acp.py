@@ -179,25 +179,36 @@ def create_pr(
 
             pr_url = run(gh_cmd, quiet=True)
 
-            # Handle merge options
+            # Always switch back to original branch first
+            run(["git", "checkout", original_branch], quiet=True)
+            if verbose:
+                print(f"Switched back to original branch: {original_branch}")
+
+            # Handle merge options after switching back
             if merge:
                 if verbose:
                     print("Merging PR immediately...")
-                run(
+
+                merge_result = subprocess.run(
                     ["gh", "pr", "merge", pr_url, "--merge", "--delete-branch"],
-                    quiet=True,
+                    capture_output=True,
+                    text=True,
                 )
 
-                # Go back
-                run(["git", "checkout", original_branch], quiet=True)
-                if verbose:
-                    print(f"Switched back to original branch: {original_branch}")
+                if merge_result.returncode != 0:
+                    print(f"PR created: {pr_url}")
+                    print(
+                        f"Error: Failed to merge PR: {merge_result.stderr.strip()}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
 
                 print(f"PR {commit_message} merged!")
             elif auto_merge:
                 if verbose:
                     print("Enabling auto-merge (will merge when checks pass)...")
-                run(
+
+                merge_result = subprocess.run(
                     [
                         "gh",
                         "pr",
@@ -207,37 +218,55 @@ def create_pr(
                         "--merge",
                         "--delete-branch",
                     ],
-                    quiet=True,
+                    capture_output=True,
+                    text=True,
                 )
 
-                # Go back
-                run(["git", "checkout", original_branch], quiet=True)
-                if verbose:
-                    print(f"Switched back to original branch: {original_branch}")
+                if merge_result.returncode != 0:
+                    print(f"PR created: {pr_url}")
+                    print(
+                        f"Error: Failed to enable auto-merge: {merge_result.stderr.strip()}",
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
 
-                print(f"PR {commit_message} will auto-merge when checks pass: {pr_url}")
+                print(f"PR {pr_url} will auto-merge when checks pass")
             else:
-                # Go back
-                run(["git", "checkout", original_branch], quiet=True)
-                if verbose:
-                    print(f"Switched back to original branch: {original_branch}")
-
                 print(f"PR created: {pr_url}")
 
     except Exception:
-        # Try to go back on error
+        # Try to go back on error and show helpful state information
         try:
             current = subprocess.run(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True,
                 text=True,
             ).stdout.strip()
+
+            print("\nError occurred. Current state:", file=sys.stderr)
+            print(f"  Current branch: {current}", file=sys.stderr)
+
             if current != original_branch:
+                print(
+                    f"  Attempting to switch back to: {original_branch}",
+                    file=sys.stderr,
+                )
                 subprocess.run(
                     ["git", "checkout", original_branch], capture_output=True
                 )
+                print(
+                    f"  Successfully switched back to: {original_branch}",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"  Already on original branch: {original_branch}", file=sys.stderr
+                )
         except Exception:
-            pass
+            print(
+                "  Failed to determine current state or switch branches",
+                file=sys.stderr,
+            )
         raise
 
 

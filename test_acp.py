@@ -338,7 +338,19 @@ class TestCreatePR:
     ):
         """Test PR creation with immediate merge."""
         mock_run_check.return_value = False  # Has staged changes
-        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")  # No upstream
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command - return success
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
 
         mock_run.side_effect = [
             "main",  # current branch
@@ -348,19 +360,21 @@ class TestCreatePR:
             None,  # git commit
             None,  # git push
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # gh pr merge
             None,  # git checkout original
         ]
 
         acp.create_pr("test commit", verbose=False, body="", merge=True)
 
-        # Verify merge was called
-        calls = mock_run.call_args_list
-        merge_call = calls[7]
+        # Verify subprocess.run was called for merge
+        merge_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if len(call[0]) > 0 and "merge" in str(call[0][0])
+        ]
+        assert len(merge_calls) > 0
+        merge_call = merge_calls[0]
         assert "gh" in str(merge_call)
-        assert "pr" in str(merge_call)
         assert "merge" in str(merge_call)
-        assert "--merge" in str(merge_call)
         assert "--delete-branch" in str(merge_call)
 
         # Verify output message
@@ -375,7 +389,19 @@ class TestCreatePR:
     ):
         """Test PR creation with auto-merge enabled."""
         mock_run_check.return_value = False  # Has staged changes
-        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")  # No upstream
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command - return success
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
 
         mock_run.side_effect = [
             "main",  # current branch
@@ -385,20 +411,22 @@ class TestCreatePR:
             None,  # git commit
             None,  # git push
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # gh pr merge --auto
             None,  # git checkout original
         ]
 
         acp.create_pr("test commit", verbose=False, body="", auto_merge=True)
 
         # Verify auto-merge was called
-        calls = mock_run.call_args_list
-        merge_call = calls[7]
+        merge_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if len(call[0]) > 0 and "merge" in str(call[0][0])
+        ]
+        assert len(merge_calls) > 0
+        merge_call = merge_calls[0]
         assert "gh" in str(merge_call)
-        assert "pr" in str(merge_call)
         assert "merge" in str(merge_call)
         assert "--auto" in str(merge_call)
-        assert "--merge" in str(merge_call)
         assert "--delete-branch" in str(merge_call)
 
         # Verify output message
@@ -413,7 +441,19 @@ class TestCreatePR:
     ):
         """Test PR creation with merge in verbose mode."""
         mock_run_check.return_value = False  # Has staged changes
-        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")  # No upstream
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command - return success
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
 
         mock_run.side_effect = [
             "main",  # current branch
@@ -423,7 +463,6 @@ class TestCreatePR:
             None,  # git commit
             None,  # git push
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # gh pr merge
             None,  # git checkout original
         ]
 
@@ -433,6 +472,102 @@ class TestCreatePR:
         captured = capsys.readouterr()
         assert "Merging PR immediately..." in captured.out
         assert "merged!" in captured.out
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_merge_failure(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test PR creation when merge fails - should show PR created and error."""
+        mock_run_check.return_value = False  # Has staged changes
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command - return failure
+            elif "merge" in str(cmd):
+                return mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr="GraphQL: Merge commits are not allowed on this repository",
+                )
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            "https://github.com/user/repo/pull/1",  # gh pr create
+            None,  # git checkout original
+        ]
+
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test commit", verbose=False, body="", merge=True)
+
+        assert exc.value.code == 1
+
+        # Verify output shows PR was created and then error
+        captured = capsys.readouterr()
+        assert "PR created: https://github.com/user/repo/pull/1" in captured.out
+        assert "Failed to merge PR" in captured.err
+        assert "Merge commits are not allowed" in captured.err
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_auto_merge_failure(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test PR creation when auto-merge fails - should show PR created and error."""
+        mock_run_check.return_value = False  # Has staged changes
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command - return failure
+            elif "merge" in str(cmd) and "--auto" in cmd:
+                return mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr="auto-merge is not enabled for this repository",
+                )
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            "https://github.com/user/repo/pull/1",  # gh pr create
+            None,  # git checkout original
+        ]
+
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test commit", verbose=False, body="", auto_merge=True)
+
+        assert exc.value.code == 1
+
+        # Verify output shows PR was created and then error
+        captured = capsys.readouterr()
+        assert "PR created: https://github.com/user/repo/pull/1" in captured.out
+        assert "Failed to enable auto-merge" in captured.err
+        assert "auto-merge is not enabled" in captured.err
 
 
 class TestMain:
