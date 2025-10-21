@@ -64,17 +64,21 @@ With a PR body message and verbose output:
 acp pr "fix: resolve issue" -b "Closes #123" -v
 ```
 
-With interactive (`-i`) mode to skip automatic PR creation and have a GitHub link to crate PR instead:
+Skip automatic PR creation and have a GitHub link to crate PR manually:
 
 ```bash
 acp pr "feat: new feature" --interactive
 ```
 
-With merging PR immediately after creation or using GitHub [auto-merge][auto-merge] feature:
+Merge PR immediately after creation or use GitHub [auto-merge][auto-merge] feature:
 
 ```bash
+# Squash and merge immediately (default merge method)
 acp pr "fix: urgent hotfix" --merge
-acp pr "fix: urgent hotfix but wait for CI checks pass" --auto-merge
+
+# Use different merge methods: merge, squash, or rebase
+acp pr "fix: hotfix" --merge --merge-method merge
+acp pr "feat: feature" --auto-merge --merge-method rebase
 ```
 
 ## Contributing
