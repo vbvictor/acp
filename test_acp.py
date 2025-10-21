@@ -380,8 +380,10 @@ class TestCreatePR:
         assert "--squash" in str(merge_call)
         assert "--delete-branch" in str(merge_call)
 
-        # Verify output message
+        # Verify output message includes PR link
         captured = capsys.readouterr()
+        assert 'PR "test commit"' in captured.out
+        assert "https://github.com/user/repo/pull/1" in captured.out
         assert "merged!" in captured.out
 
     @mock.patch("subprocess.run")
@@ -439,8 +441,10 @@ class TestCreatePR:
         assert "--squash" in str(merge_call)
         assert "--delete-branch" in str(merge_call)
 
-        # Verify output message
+        # Verify output message includes PR link
         captured = capsys.readouterr()
+        assert 'PR "test commit"' in captured.out
+        assert "https://github.com/user/repo/pull/1" in captured.out
         assert "will auto-merge when checks pass" in captured.out
 
     @mock.patch("subprocess.run")
@@ -480,9 +484,11 @@ class TestCreatePR:
             "test commit", verbose=True, body="", merge=True, merge_method="squash"
         )
 
-        # Verify verbose output includes merge step with method
+        # Verify verbose output includes merge step with method and PR link
         captured = capsys.readouterr()
         assert "Merging PR immediately (method: squash)" in captured.out
+        assert 'PR "test commit"' in captured.out
+        assert "https://github.com/user/repo/pull/1" in captured.out
         assert "merged!" in captured.out
 
     @mock.patch("subprocess.run")
