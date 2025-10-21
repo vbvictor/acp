@@ -64,14 +64,18 @@ With a PR body message and verbose output:
 acp pr "fix: resolve issue" -b "Closes #123" -v
 ```
 
-Review PR before final submission (interactive mode):
+With interactive (`-i`) mode to skip automatic PR creation and have a GitHub link to crate PR instead:
 
 ```bash
-acp pr "feat: new feature" -i
+acp pr "feat: new feature" --interactive
 ```
 
-The `-i` (`--interactive`) flag skips automatic PR creation and instead gives you a GitHub link. \
-This lets you review the changes, edit the PR title/description, and publish it manually.
+With merging PR immediately after creation or using GitHub [auto-merge][auto-merge] feature:
+
+```bash
+acp pr "fix: urgent hotfix" --merge
+acp pr "fix: urgent hotfix but wait for CI checks pass" --auto-merge
+```
 
 ## Contributing
 
@@ -104,3 +108,4 @@ acp pr "feat: your awesome feature"
 [python]: https://www.python.org/
 [git]: https://git-scm.com/
 [gh]: https://cli.github.com/
+[auto-merge]: https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/incorporating-changes-from-a-pull-request/automatically-merging-a-pull-request
