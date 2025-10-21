@@ -79,9 +79,9 @@ acp pr "fix: urgent hotfix but wait for CI checks pass" --auto-merge
 
 ## Contributing
 
-Contributions welcome! Please open an issue or submit a pull request.
+Contributions welcome! Please open an issue if you have an idea or submit a pull request.
 
-### Running tests
+### Developer environment
 
 Create a virtual environment, install dev dependencies, and run tests:
 
