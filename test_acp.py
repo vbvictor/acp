@@ -306,6 +306,134 @@ class TestCreatePR:
         assert "github.com/user/myrepo/compare/main...pr/" in captured.out
         assert "?expand=1" in captured.out
 
+    def test_create_pr_merge_with_interactive_error(self):
+        """Test that --merge with --interactive raises error."""
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr(
+                "test commit", verbose=False, body="", interactive=True, merge=True
+            )
+        assert exc.value.code == 1
+
+    def test_create_pr_auto_merge_with_interactive_error(self):
+        """Test that --auto-merge with --interactive raises error."""
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr(
+                "test commit", verbose=False, body="", interactive=True, auto_merge=True
+            )
+        assert exc.value.code == 1
+
+    def test_create_pr_merge_and_auto_merge_together_error(self):
+        """Test that --merge and --auto-merge together raises error."""
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr(
+                "test commit", verbose=False, body="", merge=True, auto_merge=True
+            )
+        assert exc.value.code == 1
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_merge(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test PR creation with immediate merge."""
+        mock_run_check.return_value = False  # Has staged changes
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")  # No upstream
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            "https://github.com/user/repo/pull/1",  # gh pr create
+            None,  # gh pr merge
+            None,  # git checkout original
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", merge=True)
+
+        # Verify merge was called
+        calls = mock_run.call_args_list
+        merge_call = calls[7]
+        assert "gh" in str(merge_call)
+        assert "pr" in str(merge_call)
+        assert "merge" in str(merge_call)
+        assert "--merge" in str(merge_call)
+        assert "--delete-branch" in str(merge_call)
+
+        # Verify output message
+        captured = capsys.readouterr()
+        assert "merged!" in captured.out
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_auto_merge(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test PR creation with auto-merge enabled."""
+        mock_run_check.return_value = False  # Has staged changes
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")  # No upstream
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            "https://github.com/user/repo/pull/1",  # gh pr create
+            None,  # gh pr merge --auto
+            None,  # git checkout original
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", auto_merge=True)
+
+        # Verify auto-merge was called
+        calls = mock_run.call_args_list
+        merge_call = calls[7]
+        assert "gh" in str(merge_call)
+        assert "pr" in str(merge_call)
+        assert "merge" in str(merge_call)
+        assert "--auto" in str(merge_call)
+        assert "--merge" in str(merge_call)
+        assert "--delete-branch" in str(merge_call)
+
+        # Verify output message
+        captured = capsys.readouterr()
+        assert "will auto-merge when checks pass" in captured.out
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_merge_verbose(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test PR creation with merge in verbose mode."""
+        mock_run_check.return_value = False  # Has staged changes
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")  # No upstream
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            "https://github.com/user/repo/pull/1",  # gh pr create
+            None,  # gh pr merge
+            None,  # git checkout original
+        ]
+
+        acp.create_pr("test commit", verbose=True, body="", merge=True)
+
+        # Verify verbose output includes merge step
+        captured = capsys.readouterr()
+        assert "Merging PR immediately..." in captured.out
+        assert "merged!" in captured.out
+
 
 class TestMain:
     """Test the main() function."""
@@ -347,7 +475,12 @@ class TestMain:
         with mock.patch.object(sys, "argv", ["acp", "pr", "test message"]):
             acp.main()
             mock_create_pr.assert_called_once_with(
-                "test message", verbose=False, body="", interactive=False
+                "test message",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -356,7 +489,40 @@ class TestMain:
         with mock.patch.object(sys, "argv", ["acp", "pr", "test", "-v"]):
             acp.main()
             mock_create_pr.assert_called_once_with(
-                "test", verbose=True, body="", interactive=False
+                "test",
+                verbose=True,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_merge_flag(self, mock_create_pr):
+        """Test --merge flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "--merge"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=True,
+                auto_merge=False,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_auto_merge_flag(self, mock_create_pr):
+        """Test --auto-merge flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "--auto-merge"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=True,
             )
 
     @mock.patch("acp.create_pr")

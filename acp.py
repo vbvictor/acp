@@ -25,7 +25,7 @@ def run_check(cmd):
 
 def show_help():
     """Show help message."""
-    print("usage: acp pr <commit message> [-b <body>] [-i]")
+    print("usage: acp pr <commit message> [-b <body>] [-i] [--merge|--auto-merge]")
     print()
     print("acp - create PRs in one command")
     print()
@@ -33,16 +33,39 @@ def show_help():
     print("  -b, --body <text>     Custom PR body message")
     print("  -i, --interactive     Show PR creation URL instead of creating PR")
     print("  -v, --verbose         Show detailed output")
-    print("  -h, --help            Show this help message")
+    print("  --merge               Merge PR immediately after creation")
+    print("  --auto-merge          Enable GitHub auto-merge after PR creation")
     print("  --version             Show version number")
+    print("  -h, --help            Show this help message")
     print()
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
-    print('  acp pr "fix: bug" -b "Closes issue #123"')
+    print('  acp pr "fix: urgent" -b "Closes issue #123" --merge')
 
 
-def create_pr(commit_message, verbose=False, body="", interactive=False):
+def create_pr(
+    commit_message,
+    verbose=False,
+    body="",
+    interactive=False,
+    merge=False,
+    auto_merge=False,
+):
     """Create a PR with staged changes."""
+    # Validate merge flags
+    if interactive and (merge or auto_merge):
+        print(
+            "Error: Cannot use --merge or --auto-merge with --interactive mode",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if merge and auto_merge:
+        print(
+            "Error: Cannot use --merge and --auto-merge together",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     # Get current state
     original_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
     if verbose:
@@ -156,12 +179,50 @@ def create_pr(commit_message, verbose=False, body="", interactive=False):
 
             pr_url = run(gh_cmd, quiet=True)
 
-            # Go back
-            run(["git", "checkout", original_branch], quiet=True)
-            if verbose:
-                print(f"Switched back to original branch: {original_branch}")
+            # Handle merge options
+            if merge:
+                if verbose:
+                    print("Merging PR immediately...")
+                run(
+                    ["gh", "pr", "merge", pr_url, "--merge", "--delete-branch"],
+                    quiet=True,
+                )
 
-            print(f"PR created: {pr_url}")
+                # Go back
+                run(["git", "checkout", original_branch], quiet=True)
+                if verbose:
+                    print(f"Switched back to original branch: {original_branch}")
+
+                print(f"PR {commit_message} merged!")
+            elif auto_merge:
+                if verbose:
+                    print("Enabling auto-merge (will merge when checks pass)...")
+                run(
+                    [
+                        "gh",
+                        "pr",
+                        "merge",
+                        pr_url,
+                        "--auto",
+                        "--merge",
+                        "--delete-branch",
+                    ],
+                    quiet=True,
+                )
+
+                # Go back
+                run(["git", "checkout", original_branch], quiet=True)
+                if verbose:
+                    print(f"Switched back to original branch: {original_branch}")
+
+                print(f"PR {commit_message} will auto-merge when checks pass: {pr_url}")
+            else:
+                # Go back
+                run(["git", "checkout", original_branch], quiet=True)
+                if verbose:
+                    print(f"Switched back to original branch: {original_branch}")
+
+                print(f"PR created: {pr_url}")
 
     except Exception:
         # Try to go back on error
@@ -200,6 +261,14 @@ def main():
     parser.add_argument(
         "-i", "--interactive", action="store_true", help="Show PR creation URL"
     )
+    parser.add_argument(
+        "--merge", action="store_true", help="Merge PR immediately after creation"
+    )
+    parser.add_argument(
+        "--auto-merge",
+        action="store_true",
+        help="Enable auto-merge (merge when checks pass)",
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
@@ -223,6 +292,8 @@ def main():
             verbose=args.verbose,
             body=args.body,
             interactive=args.interactive,
+            merge=args.merge,
+            auto_merge=args.auto_merge,
         )
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
