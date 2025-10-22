@@ -76,15 +76,15 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
+            None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # git checkout original
         ]
 
         acp.create_pr("test commit", verbose=False, body="")
 
         # Verify PR was created to same repo (not a fork)
         calls = mock_run.call_args_list
-        pr_create_call = calls[6]
+        pr_create_call = calls[7]  # Updated index after adding checkout
         # Should use --head branch (not owner:branch)
         assert "--head" in str(pr_create_call)
 
@@ -131,15 +131,15 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
-            "https://github.com/upstream/repo/pull/1",
-            None,
+            None,  # git checkout original (moved before PR creation)
+            "https://github.com/upstream/repo/pull/1",  # gh pr create
         ]
 
         acp.create_pr("test commit", verbose=False, body="")
 
         # Check that PR was created with fork-owner:branch format
         calls = mock_run.call_args_list
-        pr_create_call = calls[6]
+        pr_create_call = calls[7]  # Updated index after adding checkout
         assert "fork-owner:" in str(pr_create_call)
 
     @mock.patch("subprocess.run")
@@ -158,18 +158,18 @@ class TestCreatePR:
             "main",
             "testuser",
             "https://github.com/fork-owner/repo.git",  # origin (fork)
-            None,
-            None,
-            None,
-            "https://github.com/upstream/repo/pull/1",
-            None,
+            None,  # git checkout -b
+            None,  # git commit
+            None,  # git push
+            None,  # git checkout original (moved before PR creation)
+            "https://github.com/upstream/repo/pull/1",  # gh pr create
         ]
 
         acp.create_pr("test commit", verbose=False, body="")
 
         # Verify fork logic was used
         calls = mock_run.call_args_list
-        pr_create_call = calls[6]
+        pr_create_call = calls[7]  # Updated index after adding checkout
         assert "fork-owner:" in str(pr_create_call)
 
     @mock.patch("acp.run")
@@ -359,8 +359,8 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
+            None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # git checkout original
         ]
 
         acp.create_pr(
@@ -415,8 +415,8 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
+            None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # git checkout original
         ]
 
         acp.create_pr(
@@ -476,8 +476,8 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
+            None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # git checkout original
         ]
 
         acp.create_pr(
@@ -486,9 +486,12 @@ class TestCreatePR:
 
         # Verify verbose output includes merge step with method and PR link
         captured = capsys.readouterr()
+        assert 'Committing: "test commit"' in captured.out
+        assert "Pushing branch" in captured.out
+        assert "Creating PR to: user/repo..." in captured.out
+        assert "PR created: https://github.com/user/repo/pull/1" in captured.out
         assert "Merging PR immediately (method: squash)" in captured.out
         assert 'PR "test commit"' in captured.out
-        assert "https://github.com/user/repo/pull/1" in captured.out
         assert "merged!" in captured.out
 
     @mock.patch("subprocess.run")
@@ -524,8 +527,8 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
+            None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # git checkout original
         ]
 
         with pytest.raises(SystemExit) as exc:
@@ -574,8 +577,8 @@ class TestCreatePR:
             None,  # git checkout -b
             None,  # git commit
             None,  # git push
+            None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
-            None,  # git checkout original
         ]
 
         with pytest.raises(SystemExit) as exc:
