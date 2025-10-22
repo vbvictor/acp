@@ -259,7 +259,9 @@ def create_pr(
                     )
                     sys.exit(1)
 
-                print(f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass')
+                print(
+                    f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass'
+                )
             else:
                 print(f"PR created: {pr_url}")
 
