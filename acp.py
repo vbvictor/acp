@@ -228,7 +228,7 @@ def create_pr(
                     )
                     sys.exit(1)
 
-                print(f"PR {commit_message} merged!")
+                print(f'PR "{commit_message}" ({pr_url}) merged!')
             elif auto_merge:
                 if verbose:
                     print(
@@ -259,7 +259,9 @@ def create_pr(
                     )
                     sys.exit(1)
 
-                print(f"PR {pr_url} will auto-merge when checks pass")
+                print(
+                    f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass'
+                )
             else:
                 print(f"PR created: {pr_url}")
 
