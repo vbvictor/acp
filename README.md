@@ -29,6 +29,8 @@ When you run `acp pr <commit message>`, `acp` will:
 6. Switch you back to your original branch
 7. Print the PR URL
 
+The tool can also merge freshly created PR via `--merge` or `--auto-merge` options, see `--help` for more information.
+
 ## Getting Started
 
 **Prerequisites:** [Python 3.9+][python], [Git][git], and [GitHub CLI (gh)][gh]
@@ -51,14 +53,14 @@ gh auth login
 
 ## Usage
 
-Basic usage:
+Create basic PR:
 
 ```bash
 git add .
 acp pr "fix: correct calculation bug"
 ```
 
-With a PR body message and verbose output:
+Create PR body message and run `acp` with verbose output:
 
 ```bash
 acp pr "fix: resolve issue" -b "Closes #123" -v
