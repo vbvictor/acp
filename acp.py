@@ -45,8 +45,7 @@ def show_help():
     print()
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
-    print('  acp pr "fix: urgent" -b "Closes issue #123" --merge')
-    print('  acp pr "feat: feature" --auto-merge --merge-method rebase')
+    print('  acp pr "fix: urgent" -b "Closes issue #123" --merge --merge-method rebase')
 
 
 def create_pr(
