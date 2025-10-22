@@ -144,12 +144,12 @@ def create_pr(
         # Create branch and commit
         run(["git", "checkout", "-b", temp_branch], quiet=True)
         if verbose:
-            print(f"Committing: {commit_message}")
+            print(f'Committing: "{commit_message}"')
         run(["git", "commit", "-m", commit_message], quiet=True)
 
         # Push
         if verbose:
-            print(f"Pushing {temp_branch} to {fork_repo}...")
+            print(f"Pushing branch {temp_branch} to {fork_repo}...")
         run(["git", "push", "-u", "origin", temp_branch], quiet=True)
 
         if interactive:
@@ -170,8 +170,13 @@ def create_pr(
 
             print(f"PR creation URL: {compare_url}")
         else:
+            # Always switch back to original branch first
+            run(["git", "checkout", original_branch], quiet=True)
             if verbose:
-                print(f"Creating PR to: {upstream_repo}")
+                print(f"Switched back to original branch: {original_branch}")
+
+            if verbose:
+                print(f"Creating PR to: {upstream_repo}...")
 
             # Create PR with correct head format for forks
             gh_cmd = [
@@ -195,10 +200,8 @@ def create_pr(
 
             pr_url = run(gh_cmd, quiet=True)
 
-            # Always switch back to original branch first
-            run(["git", "checkout", original_branch], quiet=True)
             if verbose:
-                print(f"Switched back to original branch: {original_branch}")
+                print(f"PR created: {pr_url}")
 
             # Handle merge options after switching back
             if merge:
@@ -221,7 +224,8 @@ def create_pr(
                 )
 
                 if merge_result.returncode != 0:
-                    print(f"PR created: {pr_url}")
+                    if not verbose:
+                        print(f"PR created: {pr_url}")
                     print(
                         f"Error: Failed to merge PR: {merge_result.stderr.strip()}",
                         file=sys.stderr,
@@ -231,9 +235,7 @@ def create_pr(
                 print(f'PR "{commit_message}" ({pr_url}) merged!')
             elif auto_merge:
                 if verbose:
-                    print(
-                        f"Enabling auto-merge (method: {merge_method}, will merge when checks pass)..."
-                    )
+                    print(f"Enabling auto-merge (method: {merge_method})...")
 
                 # Build auto-merge command with the specified method
                 merge_cmd = [
@@ -252,7 +254,8 @@ def create_pr(
                 )
 
                 if merge_result.returncode != 0:
-                    print(f"PR created: {pr_url}")
+                    if not verbose:
+                        print(f"PR created: {pr_url}")
                     print(
                         f"Error: Failed to enable auto-merge: {merge_result.stderr.strip()}",
                         file=sys.stderr,
@@ -263,7 +266,8 @@ def create_pr(
                     f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass'
                 )
             else:
-                print(f"PR created: {pr_url}")
+                if not verbose:
+                    print(f"PR created: {pr_url}")
 
     except Exception:
         # Try to go back on error and show helpful state information
