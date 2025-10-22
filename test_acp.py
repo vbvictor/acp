@@ -339,6 +339,8 @@ class TestCreatePR:
         """Test PR creation with immediate merge."""
         mock_run_check.return_value = False  # Has staged changes
 
+        api_check_count = {"count": 0}
+
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
             # Upstream check - return error (no upstream)
@@ -347,16 +349,28 @@ class TestCreatePR:
             # Merge command - return success
             elif "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            # Branch existence check via API - return success (branch exists)
+            # Branch existence check via API - return success first, then 404
             elif "api" in str(cmd) and "DELETE" not in str(cmd):
-                return mock.Mock(
-                    returncode=0,
-                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
-                    stderr="",
-                )
+                api_check_count["count"] += 1
+                if api_check_count["count"] == 1:
+                    # First check: branch exists (for deletion)
+                    return mock.Mock(
+                        returncode=0,
+                        stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                        stderr="",
+                    )
+                else:
+                    # Second check: branch is gone (for local cleanup check)
+                    return mock.Mock(returncode=1, stdout="", stderr="Not Found")
             # Branch deletion via API - return success
             elif "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
+            # Local branch check (git rev-parse --verify)
+            elif "rev-parse" in str(cmd) and "--verify" in str(cmd):
+                return mock.Mock(returncode=0, stdout="abc123", stderr="")
+            # Local branch deletion (git branch -D)
+            elif "branch" in str(cmd) and "-D" in str(cmd):
+                return mock.Mock(returncode=0, stdout="Deleted branch", stderr="")
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -487,6 +501,8 @@ class TestCreatePR:
         """Test PR creation with merge in verbose mode."""
         mock_run_check.return_value = False  # Has staged changes
 
+        api_check_count = {"count": 0}
+
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
             # Upstream check - return error (no upstream)
@@ -495,16 +511,26 @@ class TestCreatePR:
             # Merge command - return success
             elif "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            # Branch existence check via API - return success (branch exists)
+            # Branch existence check via API - return success first, then 404
             elif "api" in str(cmd) and "DELETE" not in str(cmd):
-                return mock.Mock(
-                    returncode=0,
-                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
-                    stderr="",
-                )
+                api_check_count["count"] += 1
+                if api_check_count["count"] == 1:
+                    return mock.Mock(
+                        returncode=0,
+                        stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                        stderr="",
+                    )
+                else:
+                    return mock.Mock(returncode=1, stdout="", stderr="Not Found")
             # Branch deletion via API - return success
             elif "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
+            # Local branch check (git rev-parse --verify)
+            elif "rev-parse" in str(cmd) and "--verify" in str(cmd):
+                return mock.Mock(returncode=0, stdout="abc123", stderr="")
+            # Local branch deletion (git branch -D)
+            elif "branch" in str(cmd) and "-D" in str(cmd):
+                return mock.Mock(returncode=0, stdout="Deleted branch", stderr="")
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
 

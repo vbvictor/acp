@@ -9,7 +9,7 @@ import random
 import subprocess
 import sys
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
 
 
 def run(cmd, quiet=False):
@@ -179,50 +179,108 @@ def create_github_pr(
     return pr_url
 
 
-def delete_branch_if_exists(upstream_repo, temp_branch, verbose):
-    """Check if branch exists and delete it if it does.
+def check_remote_branch_exists(upstream_repo, temp_branch):
+    """Check if remote branch exists.
 
-    Silently ignores if branch is already deleted.
+    Returns True if branch exists, False otherwise.
     """
-    if verbose:
-        print(f"Checking if branch {temp_branch} still exists...")
-
     check_result = subprocess.run(
         ["gh", "api", f"repos/{upstream_repo}/git/refs/heads/{temp_branch}"],
         capture_output=True,
         text=True,
     )
+    return check_result.returncode == 0
 
-    # Only try to delete if branch exists
-    if check_result.returncode == 0:
+
+def delete_local_branch(temp_branch, verbose):
+    """Delete local temporary branch.
+
+    Only deletes if the local branch exists.
+    """
+    # Check if local branch exists
+    local_check = subprocess.run(
+        ["git", "rev-parse", "--verify", temp_branch],
+        capture_output=True,
+        text=True,
+    )
+
+    if local_check.returncode == 0:
         if verbose:
-            print(f"Deleting branch {temp_branch}...")
+            print(f"Deleting local branch {temp_branch}...")
 
         delete_result = subprocess.run(
-            [
-                "gh",
-                "api",
-                "-X",
-                "DELETE",
-                f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
-            ],
+            ["git", "branch", "-D", temp_branch],
             capture_output=True,
             text=True,
         )
 
-        if delete_result.returncode != 0:
+        if delete_result.returncode == 0:
+            if verbose:
+                print(f"Local branch {temp_branch} deleted")
+        else:
             if verbose:
                 print(
-                    f"Warning: Could not delete branch {temp_branch}: {delete_result.stderr.strip()}"
+                    f"Warning: Could not delete local branch {temp_branch}: {delete_result.stderr.strip()}"
                 )
     elif verbose:
-        print(f"Branch {temp_branch} already deleted by GitHub")
+        print(f"Local branch {temp_branch} does not exist")
+
+
+def delete_remote_branch(upstream_repo, temp_branch, verbose):
+    """Delete remote branch using GitHub API."""
+    if verbose:
+        print(f"Deleting remote branch {temp_branch}...")
+
+    delete_result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "-X",
+            "DELETE",
+            f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    if delete_result.returncode != 0:
+        if verbose:
+            print(
+                f"Warning: Could not delete remote branch {temp_branch}: {delete_result.stderr.strip()}"
+            )
+    elif verbose:
+        print(f"Remote branch {temp_branch} deleted")
+
+
+def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
+    """Clean up both remote and local branches after PR merge.
+
+    Makes a single API call to check remote branch status, then:
+    - If remote exists: delete remote, then delete local
+    - If remote gone: just delete local
+    """
+    if verbose:
+        print(f"Checking if branch {temp_branch} still exists...")
+
+    # Single API call to check branch existence
+    branch_exists = check_remote_branch_exists(upstream_repo, temp_branch)
+
+    if branch_exists:
+        # Delete remote branch
+        delete_remote_branch(upstream_repo, temp_branch, verbose)
+        # Delete local branch
+        delete_local_branch(temp_branch, verbose)
+    else:
+        if verbose:
+            print(f"Branch {temp_branch} already deleted by GitHub")
+        # Just delete local branch since remote is gone
+        delete_local_branch(temp_branch, verbose)
 
 
 def merge_pr(pr_url, commit_message, merge_method, upstream_repo, temp_branch, verbose):
     """Merge a PR immediately after creation.
 
-    Also attempts to delete the branch after merging.
+    Also attempts to delete the remote branch and local branch after merging.
     """
     if verbose:
         print(f"Merging PR immediately (method: {merge_method})...")
@@ -243,8 +301,8 @@ def merge_pr(pr_url, commit_message, merge_method, upstream_repo, temp_branch, v
         )
         sys.exit(1)
 
-    # Try to delete the branch after successful merge
-    delete_branch_if_exists(upstream_repo, temp_branch, verbose)
+    # Clean up both remote and local branches
+    cleanup_branches_after_merge(upstream_repo, temp_branch, verbose)
 
     print(f'PR "{commit_message}" ({pr_url}) merged!')
 
