@@ -347,6 +347,16 @@ class TestCreatePR:
             # Merge command - return success
             elif "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
+            # Branch existence check via API - return success (branch exists)
+            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                    stderr="",
+                )
+            # Branch deletion via API - return success
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -367,7 +377,7 @@ class TestCreatePR:
             "test commit", verbose=False, body="", merge=True, merge_method="squash"
         )
 
-        # Verify subprocess.run was called for merge with squash
+        # Verify subprocess.run was called for merge with squash (no --delete-branch)
         merge_calls = [
             call
             for call in mock_subprocess.call_args_list
@@ -378,7 +388,28 @@ class TestCreatePR:
         assert "gh" in str(merge_call)
         assert "merge" in str(merge_call)
         assert "--squash" in str(merge_call)
-        assert "--delete-branch" in str(merge_call)
+        assert "--delete-branch" not in str(merge_call)
+
+        # Verify branch existence check API call was made
+        check_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if len(call[0]) > 0
+            and "api" in str(call[0][0])
+            and "DELETE" not in str(call[0])
+            and "refs/heads/" in str(call[0])
+        ]
+        assert len(check_calls) > 0
+
+        # Verify branch deletion API call was made
+        delete_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if len(call[0]) > 0
+            and "api" in str(call[0][0])
+            and "DELETE" in str(call[0])
+        ]
+        assert len(delete_calls) > 0
 
         # Verify output message includes PR link
         captured = capsys.readouterr()
@@ -427,7 +458,7 @@ class TestCreatePR:
             merge_method="squash",
         )
 
-        # Verify auto-merge was called with squash
+        # Verify auto-merge was called with squash (no --delete-branch)
         merge_calls = [
             call
             for call in mock_subprocess.call_args_list
@@ -439,7 +470,7 @@ class TestCreatePR:
         assert "merge" in str(merge_call)
         assert "--auto" in str(merge_call)
         assert "--squash" in str(merge_call)
-        assert "--delete-branch" in str(merge_call)
+        assert "--delete-branch" not in str(merge_call)
 
         # Verify output message includes PR link
         captured = capsys.readouterr()
@@ -463,6 +494,16 @@ class TestCreatePR:
                 return mock.Mock(returncode=1, stdout="", stderr="")
             # Merge command - return success
             elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Branch existence check via API - return success (branch exists)
+            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                    stderr="",
+                )
+            # Branch deletion via API - return success
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
@@ -515,6 +556,9 @@ class TestCreatePR:
                     stdout="",
                     stderr="GraphQL: Merge commits are not allowed on this repository",
                 )
+            # Branch deletion shouldn't be called if merge fails
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -725,6 +769,14 @@ class TestMain:
                 return mock.Mock(returncode=1, stdout="", stderr="")
             elif "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
+            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                    stderr="",
+                )
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
         mock_subprocess.side_effect = subprocess_side_effect
@@ -736,8 +788,8 @@ class TestMain:
             None,
             None,
             None,
-            "https://github.com/user/repo/pull/1",
             None,
+            "https://github.com/user/repo/pull/1",
         ]
 
         acp.create_pr("test", verbose=False, body="", merge=True, merge_method="merge")
@@ -764,6 +816,14 @@ class TestMain:
                 return mock.Mock(returncode=1, stdout="", stderr="")
             elif "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
+            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                    stderr="",
+                )
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
         mock_subprocess.side_effect = subprocess_side_effect
@@ -775,8 +835,8 @@ class TestMain:
             None,
             None,
             None,
-            "https://github.com/user/repo/pull/1",
             None,
+            "https://github.com/user/repo/pull/1",
         ]
 
         acp.create_pr("test", verbose=False, body="", merge=True, merge_method="rebase")
@@ -795,6 +855,106 @@ class TestMain:
                 "test", verbose=False, body="", merge=True, merge_method="invalid"
             )
         assert exc.value.code == 1
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_merge_with_branch_already_deleted(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test merge succeeds when branch check shows it's already deleted by GitHub."""
+        mock_run_check.return_value = False
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command succeeds
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Branch existence check returns 404 (already deleted)
+            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+                return mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr='{\n  "message": "Reference does not exist",\n  "documentation_url": "https://docs.github.com/rest/git/refs#get-a-reference"\n}',
+                )
+            # Branch deletion should not be called
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                # This shouldn't be reached, but return success if it is
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:user/repo.git",
+            None,
+            None,
+            None,
+            None,
+            "https://github.com/user/repo/pull/1",
+        ]
+
+        acp.create_pr("test", verbose=False, body="", merge=True, merge_method="squash")
+
+        # Should succeed and show merged message
+        captured = capsys.readouterr()
+        assert 'PR "test"' in captured.out
+        assert "merged!" in captured.out
+        assert "Error" not in captured.err
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_merge_with_http_404_only(
+        self, mock_run_check, mock_run, mock_subprocess, capsys
+    ):
+        """Test merge succeeds when branch check returns HTTP 404."""
+        mock_run_check.return_value = False
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Merge command succeeds
+            elif "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Branch existence check returns 404
+            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+                return mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr="gh: Not Found (HTTP 404)",
+                )
+            # Branch deletion should not be called
+            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                # This shouldn't be reached, but return success if it is
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:user/repo.git",
+            None,
+            None,
+            None,
+            None,
+            "https://github.com/user/repo/pull/1",
+        ]
+
+        acp.create_pr("test", verbose=False, body="", merge=True, merge_method="squash")
+
+        # Should succeed and show merged message
+        captured = capsys.readouterr()
+        assert 'PR "test"' in captured.out
+        assert "merged!" in captured.out
+        assert "Error" not in captured.err
 
     @mock.patch("acp.create_pr")
     def test_keyboard_interrupt(self, mock_create_pr):

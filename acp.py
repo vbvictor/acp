@@ -207,15 +207,8 @@ def create_pr(
                 if verbose:
                     print(f"Merging PR immediately (method: {merge_method})...")
 
-                # Build merge command with the specified method
-                merge_cmd = [
-                    "gh",
-                    "pr",
-                    "merge",
-                    pr_url,
-                    f"--{merge_method}",
-                    "--delete-branch",
-                ]
+                # Merge PR without deleting branch
+                merge_cmd = ["gh", "pr", "merge", pr_url, f"--{merge_method}"]
                 merge_result = subprocess.run(
                     merge_cmd,
                     capture_output=True,
@@ -231,21 +224,52 @@ def create_pr(
                     )
                     sys.exit(1)
 
+                # Check if branch still exists before trying to delete
+                if verbose:
+                    print(f"Checking if branch {temp_branch} still exists...")
+
+                check_result = subprocess.run(
+                    [
+                        "gh",
+                        "api",
+                        f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
+                    ],
+                    capture_output=True,
+                    text=True,
+                )
+
+                # Only try to delete if branch exists
+                if check_result.returncode == 0:
+                    if verbose:
+                        print(f"Deleting branch {temp_branch}...")
+
+                    delete_result = subprocess.run(
+                        [
+                            "gh",
+                            "api",
+                            "-X",
+                            "DELETE",
+                            f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
+                        ],
+                        capture_output=True,
+                        text=True,
+                    )
+
+                    if delete_result.returncode != 0:
+                        if verbose:
+                            print(
+                                f"Warning: Could not delete branch {temp_branch}: {delete_result.stderr.strip()}"
+                            )
+                elif verbose:
+                    print(f"Branch {temp_branch} already deleted by GitHub")
+
                 print(f'PR "{commit_message}" ({pr_url}) merged!')
             elif auto_merge:
                 if verbose:
                     print(f"Enabling auto-merge (method: {merge_method})...")
 
-                # Build auto-merge command with the specified method
-                merge_cmd = [
-                    "gh",
-                    "pr",
-                    "merge",
-                    pr_url,
-                    "--auto",
-                    f"--{merge_method}",
-                    "--delete-branch",
-                ]
+                # Enable auto-merge without deleting branch
+                merge_cmd = ["gh", "pr", "merge", pr_url, "--auto", f"--{merge_method}"]
                 merge_result = subprocess.run(
                     merge_cmd,
                     capture_output=True,
@@ -261,6 +285,9 @@ def create_pr(
                     )
                     sys.exit(1)
 
+                # Schedule branch deletion for after auto-merge completes
+                # Note: gh pr merge --auto doesn't support --delete-branch, so we can't auto-delete
+                # User will need to delete the branch manually or enable GitHub's auto-delete setting
                 print(
                     f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass'
                 )
