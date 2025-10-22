@@ -1,4 +1,8 @@
 #!/usr/bin/env python3
+"""ACP - Automatic Commit Pusher.
+
+A CLI tool to create GitHub pull requests from staged changes in one command.
+"""
 
 import argparse
 import random
@@ -21,6 +25,255 @@ def run_check(cmd):
     """Run a command that might fail, return True if successful."""
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.returncode == 0
+
+
+def parse_github_url(url):
+    """Parse GitHub URL and extract owner/repo.
+
+    Handles both SSH and HTTPS formats:
+    - SSH: git@github.com:owner/repo.git
+    - HTTPS: https://github.com/owner/repo.git
+
+    Returns owner/repo string or None if not a GitHub URL.
+    """
+    if "github.com" not in url:
+        return None
+
+    if url.startswith("git@"):
+        # SSH format
+        return url.split(":")[1].replace(".git", "")
+
+    # HTTPS format
+    return "/".join(url.split("/")[-2:]).replace(".git", "")
+
+
+def validate_merge_options(interactive, merge, auto_merge, merge_method):
+    """Validate merge-related command line options.
+
+    Exits with error if invalid combination is detected.
+    """
+    if interactive and (merge or auto_merge):
+        print(
+            "Error: Cannot use --merge or --auto-merge with --interactive mode",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if merge and auto_merge:
+        print(
+            "Error: Cannot use --merge and --auto-merge together",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    valid_methods = ["merge", "squash", "rebase"]
+    if merge_method not in valid_methods:
+        print(
+            f"Error: Invalid merge method '{merge_method}'. Must be one of: {', '.join(valid_methods)}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def get_repo_info(verbose):
+    """Get repository information (fork status, upstream, origin).
+
+    Returns tuple: (fork_repo, upstream_repo, is_fork)
+    """
+    # Get origin remote URL
+    origin_url = run(["git", "remote", "get-url", "origin"], quiet=True)
+    fork_repo = parse_github_url(origin_url)
+
+    if not fork_repo:
+        print("Error: Not a GitHub repository", file=sys.stderr)
+        sys.exit(1)
+
+    # Check if there's an upstream remote
+    upstream_check = subprocess.run(
+        ["git", "remote", "get-url", "upstream"], capture_output=True, text=True
+    )
+
+    if upstream_check.returncode == 0:
+        # Has upstream remote, this is a fork
+        upstream_url = upstream_check.stdout.strip()
+        upstream_repo = parse_github_url(upstream_url)
+
+        if not upstream_repo:
+            print("Error: upstream repo is not a github.com repo", file=sys.stderr)
+            sys.exit(1)
+
+        is_fork = True
+    else:
+        # No upstream remote, not a fork
+        upstream_repo = fork_repo
+        is_fork = False
+
+    return fork_repo, upstream_repo, is_fork
+
+
+def generate_temp_branch_name(verbose):
+    """Generate a unique temporary branch name.
+
+    Format: pr/{github-username}/{16-digit-random-number}
+    """
+    gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+    random_num = random.randint(1000000000000000, 9999999999999999)
+    temp_branch = f"pr/{gh_user}/{random_num}"
+
+    if verbose:
+        print(f"Creating temporary branch: {temp_branch}")
+
+    return temp_branch
+
+
+def build_compare_url(upstream_repo, fork_repo, temp_branch, is_fork):
+    """Build GitHub compare URL for interactive mode.
+
+    Returns the URL for manual PR creation.
+    """
+    upstream_base = upstream_repo.split("/")[-1]  # repo name
+
+    if is_fork:
+        fork_owner = fork_repo.split("/")[0]
+        # Format: https://github.com/upstream/repo/compare/main...fork-owner:repo:branch?expand=1
+        return f"https://github.com/{upstream_repo}/compare/main...{fork_owner}:{upstream_base}:{temp_branch}?expand=1"
+
+    # Format: https://github.com/owner/repo/compare/main...branch?expand=1
+    return f"https://github.com/{upstream_repo}/compare/main...{temp_branch}?expand=1"
+
+
+def create_github_pr(
+    upstream_repo, fork_repo, temp_branch, commit_message, body, is_fork, verbose
+):
+    """Create a GitHub PR using gh CLI.
+
+    Returns the PR URL.
+    """
+    if verbose:
+        print(f"Creating PR to: {upstream_repo}...")
+
+    gh_cmd = [
+        "gh",
+        "pr",
+        "create",
+        "--repo",
+        upstream_repo,
+        "--title",
+        commit_message,
+        "--body",
+        body,
+    ]
+
+    # For forks, we need to specify head as "username:branch"
+    if is_fork:
+        fork_owner = fork_repo.split("/")[0]
+        gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
+    else:
+        gh_cmd.extend(["--head", temp_branch])
+
+    pr_url = run(gh_cmd, quiet=True)
+
+    if verbose:
+        print(f"PR created: {pr_url}")
+
+    return pr_url
+
+
+def delete_branch_if_exists(upstream_repo, temp_branch, verbose):
+    """Check if branch exists and delete it if it does.
+
+    Silently ignores if branch is already deleted.
+    """
+    if verbose:
+        print(f"Checking if branch {temp_branch} still exists...")
+
+    check_result = subprocess.run(
+        ["gh", "api", f"repos/{upstream_repo}/git/refs/heads/{temp_branch}"],
+        capture_output=True,
+        text=True,
+    )
+
+    # Only try to delete if branch exists
+    if check_result.returncode == 0:
+        if verbose:
+            print(f"Deleting branch {temp_branch}...")
+
+        delete_result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "-X",
+                "DELETE",
+                f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        if delete_result.returncode != 0:
+            if verbose:
+                print(
+                    f"Warning: Could not delete branch {temp_branch}: {delete_result.stderr.strip()}"
+                )
+    elif verbose:
+        print(f"Branch {temp_branch} already deleted by GitHub")
+
+
+def merge_pr(pr_url, commit_message, merge_method, upstream_repo, temp_branch, verbose):
+    """Merge a PR immediately after creation.
+
+    Also attempts to delete the branch after merging.
+    """
+    if verbose:
+        print(f"Merging PR immediately (method: {merge_method})...")
+
+    merge_cmd = ["gh", "pr", "merge", pr_url, f"--{merge_method}"]
+    merge_result = subprocess.run(
+        merge_cmd,
+        capture_output=True,
+        text=True,
+    )
+
+    if merge_result.returncode != 0:
+        if not verbose:
+            print(f"PR created: {pr_url}")
+        print(
+            f"Error: Failed to merge PR: {merge_result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Try to delete the branch after successful merge
+    delete_branch_if_exists(upstream_repo, temp_branch, verbose)
+
+    print(f'PR "{commit_message}" ({pr_url}) merged!')
+
+
+def enable_auto_merge(pr_url, commit_message, merge_method, verbose):
+    """Enable auto-merge for a PR.
+
+    Note: Branch cannot be auto-deleted with auto-merge.
+    """
+    if verbose:
+        print(f"Enabling auto-merge (method: {merge_method})...")
+
+    merge_cmd = ["gh", "pr", "merge", pr_url, "--auto", f"--{merge_method}"]
+    merge_result = subprocess.run(
+        merge_cmd,
+        capture_output=True,
+        text=True,
+    )
+
+    if merge_result.returncode != 0:
+        if not verbose:
+            print(f"PR created: {pr_url}")
+        print(
+            f"Error: Failed to enable auto-merge: {merge_result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass')
 
 
 def show_help():
@@ -58,30 +311,10 @@ def create_pr(
     merge_method="squash",
 ):
     """Create a PR with staged changes."""
-    # Validate merge flags
-    if interactive and (merge or auto_merge):
-        print(
-            "Error: Cannot use --merge or --auto-merge with --interactive mode",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+    # Validate inputs
+    validate_merge_options(interactive, merge, auto_merge, merge_method)
 
-    if merge and auto_merge:
-        print(
-            "Error: Cannot use --merge and --auto-merge together",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    # Validate merge method
-    valid_methods = ["merge", "squash", "rebase"]
-    if merge_method not in valid_methods:
-        print(
-            f"Error: Invalid merge method '{merge_method}'. Must be one of: {', '.join(valid_methods)}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-    # Get current state
+    # Get current branch
     original_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
     if verbose:
         print(f"Current branch: {original_branch}")
@@ -91,54 +324,12 @@ def create_pr(
         print("Error: No staged changes. Run 'git add' first.", file=sys.stderr)
         sys.exit(1)
 
-    # Get GitHub username and create temp branch name
-    gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
-    random_num = random.randint(1000000000000000, 9999999999999999)
-    temp_branch = f"pr/{gh_user}/{random_num}"
-    if verbose:
-        print(f"Creating temporary branch: {temp_branch}")
+    # Generate temporary branch name
+    temp_branch = generate_temp_branch_name(verbose)
 
     try:
-        # Get origin remote URL to determine the fork repo
-        origin_url = run(["git", "remote", "get-url", "origin"], quiet=True)
-
-        # Extract owner/repo from git URL (handles both SSH and HTTPS)
-        # SSH: git@github.com:owner/repo.git
-        # HTTPS: https://github.com/owner/repo.git
-        if "github.com" in origin_url:
-            if origin_url.startswith("git@"):
-                # SSH format
-                fork_repo = origin_url.split(":")[1].replace(".git", "")
-            else:
-                # HTTPS format
-                fork_repo = "/".join(origin_url.split("/")[-2:]).replace(".git", "")
-        else:
-            print("Error: Not a GitHub repository", file=sys.stderr)
-            sys.exit(1)
-
-        # Check if there's an upstream remote
-        upstream_check = subprocess.run(
-            ["git", "remote", "get-url", "upstream"], capture_output=True, text=True
-        )
-
-        if upstream_check.returncode == 0:
-            # Has upstream remote, this is a fork
-            upstream_url = upstream_check.stdout.strip()
-            if "github.com" in upstream_url:
-                if upstream_url.startswith("git@"):
-                    upstream_repo = upstream_url.split(":")[1].replace(".git", "")
-                else:
-                    upstream_repo = "/".join(upstream_url.split("/")[-2:]).replace(
-                        ".git", ""
-                    )
-            else:
-                print("upstream repo is not a github.com repo")
-                sys.exit(1)
-            is_fork = True
-        else:
-            # No upstream remote, not a fork
-            upstream_repo = fork_repo
-            is_fork = False
+        # Get repository information
+        fork_repo, upstream_repo, is_fork = get_repo_info(verbose)
 
         # Create branch and commit
         run(["git", "checkout", "-b", temp_branch], quiet=True)
@@ -146,151 +337,46 @@ def create_pr(
             print(f'Committing: "{commit_message}"')
         run(["git", "commit", "-m", commit_message], quiet=True)
 
-        # Push
+        # Push to remote
         if verbose:
             print(f"Pushing branch {temp_branch} to {fork_repo}...")
         run(["git", "push", "-u", "origin", temp_branch], quiet=True)
 
+        # Switch back to original branch
+        run(["git", "checkout", original_branch], quiet=True)
+        if verbose:
+            print(f"Switched back to original branch: {original_branch}")
+
         if interactive:
-            # Build GitHub compare URL for manual PR creation
-            upstream_base = upstream_repo.split("/")[-1]  # repo name
-            if is_fork:
-                fork_owner = fork_repo.split("/")[0]
-                # Format: https://github.com/upstream/repo/compare/main...fork-owner:repo:branch?expand=1
-                compare_url = f"https://github.com/{upstream_repo}/compare/main...{fork_owner}:{upstream_base}:{temp_branch}?expand=1"
-            else:
-                # Format: https://github.com/owner/repo/compare/main...branch?expand=1
-                compare_url = f"https://github.com/{upstream_repo}/compare/main...{temp_branch}?expand=1"
-
-            # Go back
-            run(["git", "checkout", original_branch], quiet=True)
-            if verbose:
-                print(f"Switched back to original branch: {original_branch}")
-
+            # Build and display compare URL for manual PR creation
+            compare_url = build_compare_url(
+                upstream_repo, fork_repo, temp_branch, is_fork
+            )
             print(f"PR creation URL: {compare_url}")
         else:
-            # Always switch back to original branch first
-            run(["git", "checkout", original_branch], quiet=True)
-            if verbose:
-                print(f"Switched back to original branch: {original_branch}")
-
-            if verbose:
-                print(f"Creating PR to: {upstream_repo}...")
-
-            # Create PR with correct head format for forks
-            gh_cmd = [
-                "gh",
-                "pr",
-                "create",
-                "--repo",
+            # Create PR automatically
+            pr_url = create_github_pr(
                 upstream_repo,
-                "--title",
+                fork_repo,
+                temp_branch,
                 commit_message,
-                "--body",
                 body,
-            ]
+                is_fork,
+                verbose,
+            )
 
-            # For forks, we need to specify head as "username:branch"
-            if is_fork:
-                fork_owner = fork_repo.split("/")[0]
-                gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
-            else:
-                gh_cmd.extend(["--head", temp_branch])
-
-            pr_url = run(gh_cmd, quiet=True)
-
-            if verbose:
-                print(f"PR created: {pr_url}")
-
-            # Handle merge options after switching back
+            # Handle merge options
             if merge:
-                if verbose:
-                    print(f"Merging PR immediately (method: {merge_method})...")
-
-                # Merge PR without deleting branch
-                merge_cmd = ["gh", "pr", "merge", pr_url, f"--{merge_method}"]
-                merge_result = subprocess.run(
-                    merge_cmd,
-                    capture_output=True,
-                    text=True,
+                merge_pr(
+                    pr_url,
+                    commit_message,
+                    merge_method,
+                    upstream_repo,
+                    temp_branch,
+                    verbose,
                 )
-
-                if merge_result.returncode != 0:
-                    if not verbose:
-                        print(f"PR created: {pr_url}")
-                    print(
-                        f"Error: Failed to merge PR: {merge_result.stderr.strip()}",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-
-                # Check if branch still exists before trying to delete
-                if verbose:
-                    print(f"Checking if branch {temp_branch} still exists...")
-
-                check_result = subprocess.run(
-                    [
-                        "gh",
-                        "api",
-                        f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
-                    ],
-                    capture_output=True,
-                    text=True,
-                )
-
-                # Only try to delete if branch exists
-                if check_result.returncode == 0:
-                    if verbose:
-                        print(f"Deleting branch {temp_branch}...")
-
-                    delete_result = subprocess.run(
-                        [
-                            "gh",
-                            "api",
-                            "-X",
-                            "DELETE",
-                            f"repos/{upstream_repo}/git/refs/heads/{temp_branch}",
-                        ],
-                        capture_output=True,
-                        text=True,
-                    )
-
-                    if delete_result.returncode != 0:
-                        if verbose:
-                            print(
-                                f"Warning: Could not delete branch {temp_branch}: {delete_result.stderr.strip()}"
-                            )
-                elif verbose:
-                    print(f"Branch {temp_branch} already deleted by GitHub")
-
-                print(f'PR "{commit_message}" ({pr_url}) merged!')
             elif auto_merge:
-                if verbose:
-                    print(f"Enabling auto-merge (method: {merge_method})...")
-
-                # Enable auto-merge without deleting branch
-                merge_cmd = ["gh", "pr", "merge", pr_url, "--auto", f"--{merge_method}"]
-                merge_result = subprocess.run(
-                    merge_cmd,
-                    capture_output=True,
-                    text=True,
-                )
-
-                if merge_result.returncode != 0:
-                    if not verbose:
-                        print(f"PR created: {pr_url}")
-                    print(
-                        f"Error: Failed to enable auto-merge: {merge_result.stderr.strip()}",
-                        file=sys.stderr,
-                    )
-                    sys.exit(1)
-
-                # Schedule branch deletion for after auto-merge completes
-                # Note: gh pr merge --auto doesn't support --delete-branch, so we can't auto-delete
-                # User will need to delete the branch manually or enable GitHub's auto-delete setting
-                print(
-                    f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass'
-                )
+                enable_auto_merge(pr_url, commit_message, merge_method, verbose)
             else:
                 if not verbose:
                     print(f"PR created: {pr_url}")
