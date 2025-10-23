@@ -22,7 +22,7 @@ That's it. PR created, you're back on your original branch.
 When you run `acp pr <commit message>`, `acp` will:
 
 1. Validate you have staged changes
-2. Create a temporary branch `pr/{your-github-username}/{random-16-digits}`
+2. Create a temporary branch `acp/{your-github-username}/{random-16-digits}`
 3. Commit your staged changes with your message
 4. Push the branch to origin repo
 5. Create a pull request to upstream if present of origin otherwise.
