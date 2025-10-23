@@ -72,7 +72,9 @@ Skip automatic PR creation and have a GitHub link to crate PR manually:
 acp pr "feat: new feature" --interactive
 ```
 
-Merge PR immediately after creation or use GitHub [auto-merge][auto-merge] feature:
+Merge PR immediately after creation or use GitHub [auto-merge][auto-merge] feature. \
+When merging branch immediately, temporary local branch and \
+remote tracking branch will also be deleted to keep workspace clean.
 
 ```bash
 # Squash and merge immediately (default merge method)

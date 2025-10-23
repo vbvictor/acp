@@ -193,9 +193,10 @@ def check_remote_branch_exists(upstream_repo, temp_branch):
 
 
 def delete_local_branch(temp_branch, verbose):
-    """Delete local temporary branch.
+    """Delete local temporary branch and its remote tracking reference.
 
     Only deletes if the local branch exists.
+    Also removes the remote tracking branch (remotes/origin/branch) if it exists.
     """
     # Check if local branch exists
     local_check = subprocess.run(
@@ -224,6 +225,32 @@ def delete_local_branch(temp_branch, verbose):
                 )
     elif verbose:
         print(f"Local branch {temp_branch} does not exist")
+
+    # Delete remote tracking branch (remotes/origin/branch) if it exists
+    remote_tracking_check = subprocess.run(
+        ["git", "rev-parse", "--verify", f"origin/{temp_branch}"],
+        capture_output=True,
+        text=True,
+    )
+
+    if remote_tracking_check.returncode == 0:
+        if verbose:
+            print(f"Deleting remote tracking branch origin/{temp_branch}...")
+
+        delete_tracking_result = subprocess.run(
+            ["git", "branch", "-rd", f"origin/{temp_branch}"],
+            capture_output=True,
+            text=True,
+        )
+
+        if delete_tracking_result.returncode == 0:
+            if verbose:
+                print(f"Remote tracking branch origin/{temp_branch} deleted")
+        else:
+            if verbose:
+                print(
+                    f"Warning: Could not delete remote tracking branch: {delete_tracking_result.stderr.strip()}"
+                )
 
 
 def delete_remote_branch(upstream_repo, temp_branch, verbose):

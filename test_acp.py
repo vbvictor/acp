@@ -367,10 +367,20 @@ class TestCreatePR:
                 return mock.Mock(returncode=0, stdout="", stderr="")
             # Local branch check (git rev-parse --verify)
             elif "rev-parse" in str(cmd) and "--verify" in str(cmd):
-                return mock.Mock(returncode=0, stdout="abc123", stderr="")
+                # First check: local branch exists
+                # Second check: remote tracking branch exists
+                if "origin/" in str(cmd):
+                    return mock.Mock(returncode=0, stdout="abc123", stderr="")
+                else:
+                    return mock.Mock(returncode=0, stdout="abc123", stderr="")
             # Local branch deletion (git branch -D)
             elif "branch" in str(cmd) and "-D" in str(cmd):
                 return mock.Mock(returncode=0, stdout="Deleted branch", stderr="")
+            # Remote tracking branch deletion (git branch -rd)
+            elif "branch" in str(cmd) and "-rd" in str(cmd):
+                return mock.Mock(
+                    returncode=0, stdout="Deleted remote-tracking branch", stderr=""
+                )
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -527,10 +537,20 @@ class TestCreatePR:
                 return mock.Mock(returncode=0, stdout="", stderr="")
             # Local branch check (git rev-parse --verify)
             elif "rev-parse" in str(cmd) and "--verify" in str(cmd):
-                return mock.Mock(returncode=0, stdout="abc123", stderr="")
+                # First check: local branch exists
+                # Second check: remote tracking branch exists
+                if "origin/" in str(cmd):
+                    return mock.Mock(returncode=0, stdout="abc123", stderr="")
+                else:
+                    return mock.Mock(returncode=0, stdout="abc123", stderr="")
             # Local branch deletion (git branch -D)
             elif "branch" in str(cmd) and "-D" in str(cmd):
                 return mock.Mock(returncode=0, stdout="Deleted branch", stderr="")
+            # Remote tracking branch deletion (git branch -rd)
+            elif "branch" in str(cmd) and "-rd" in str(cmd):
+                return mock.Mock(
+                    returncode=0, stdout="Deleted remote-tracking branch", stderr=""
+                )
             # Default
             return mock.Mock(returncode=0, stdout="", stderr="")
 
