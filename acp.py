@@ -114,11 +114,11 @@ def get_repo_info(verbose):
 def generate_temp_branch_name(verbose):
     """Generate a unique temporary branch name.
 
-    Format: pr/{github-username}/{16-digit-random-number}
+    Format: acp/{github-username}/{16-digit-random-number}
     """
     gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
     random_num = random.randint(1000000000000000, 9999999999999999)
-    temp_branch = f"pr/{gh_user}/{random_num}"
+    temp_branch = f"acp/{gh_user}/{random_num}"
 
     if verbose:
         print(f"Creating temporary branch: '{temp_branch}'")

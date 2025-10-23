@@ -303,7 +303,7 @@ class TestCreatePR:
         # Verify URL format for non-fork
         captured = capsys.readouterr()
         assert "PR creation URL:" in captured.out
-        assert "github.com/user/myrepo/compare/main...pr/" in captured.out
+        assert "github.com/user/myrepo/compare/main...acp/" in captured.out
         assert "?expand=1" in captured.out
 
     def test_create_pr_merge_with_interactive_error(self):
@@ -356,7 +356,7 @@ class TestCreatePR:
                     # First check: branch exists (for deletion)
                     return mock.Mock(
                         returncode=0,
-                        stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                        stdout='{"ref": "refs/heads/acp/testuser/123"}',
                         stderr="",
                     )
                 else:
@@ -527,7 +527,7 @@ class TestCreatePR:
                 if api_check_count["count"] == 1:
                     return mock.Mock(
                         returncode=0,
-                        stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                        stdout='{"ref": "refs/heads/acp/testuser/123"}',
                         stderr="",
                     )
                 else:
@@ -818,7 +818,7 @@ class TestMain:
             elif "api" in str(cmd) and "DELETE" not in str(cmd):
                 return mock.Mock(
                     returncode=0,
-                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                    stdout='{"ref": "refs/heads/acp/testuser/123"}',
                     stderr="",
                 )
             elif "api" in str(cmd) and "DELETE" in str(cmd):
@@ -865,7 +865,7 @@ class TestMain:
             elif "api" in str(cmd) and "DELETE" not in str(cmd):
                 return mock.Mock(
                     returncode=0,
-                    stdout='{"ref": "refs/heads/pr/testuser/123"}',
+                    stdout='{"ref": "refs/heads/acp/testuser/123"}',
                     stderr="",
                 )
             elif "api" in str(cmd) and "DELETE" in str(cmd):
