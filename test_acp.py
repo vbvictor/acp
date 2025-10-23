@@ -575,7 +575,7 @@ class TestCreatePR:
         captured = capsys.readouterr()
         assert 'Committing: "test commit"' in captured.out
         assert "Pushing branch" in captured.out
-        assert "Creating PR to: user/repo..." in captured.out
+        assert "Creating PR to: 'user/repo'..." in captured.out
         assert "PR created: https://github.com/user/repo/pull/1" in captured.out
         assert "Merging PR immediately (method: squash)" in captured.out
         assert 'PR "test commit"' in captured.out

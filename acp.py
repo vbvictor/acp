@@ -121,7 +121,7 @@ def generate_temp_branch_name(verbose):
     temp_branch = f"pr/{gh_user}/{random_num}"
 
     if verbose:
-        print(f"Creating temporary branch: {temp_branch}")
+        print(f"Creating temporary branch: '{temp_branch}'")
 
     return temp_branch
 
@@ -150,7 +150,7 @@ def create_github_pr(
     Returns the PR URL.
     """
     if verbose:
-        print(f"Creating PR to: {upstream_repo}...")
+        print(f"Creating PR to: '{upstream_repo}'...")
 
     gh_cmd = [
         "gh",
@@ -207,7 +207,7 @@ def delete_local_branch(temp_branch, verbose):
 
     if local_check.returncode == 0:
         if verbose:
-            print(f"Deleting local branch {temp_branch}...")
+            print(f"Deleting local branch '{temp_branch}'...")
 
         delete_result = subprocess.run(
             ["git", "branch", "-D", temp_branch],
@@ -217,14 +217,40 @@ def delete_local_branch(temp_branch, verbose):
 
         if delete_result.returncode == 0:
             if verbose:
-                print(f"Local branch {temp_branch} deleted")
+                print(f"Local branch '{temp_branch}' deleted")
         else:
             if verbose:
                 print(
-                    f"Warning: Could not delete local branch {temp_branch}: {delete_result.stderr.strip()}"
+                    f"Warning: Could not delete local branch '{temp_branch}': {delete_result.stderr.strip()}"
                 )
     elif verbose:
-        print(f"Local branch {temp_branch} does not exist")
+        print(f"Local branch '{temp_branch}' does not exist")
+
+    # Delete remote tracking branch (remotes/origin/branch) if it exists
+    remote_tracking_check = subprocess.run(
+        ["git", "rev-parse", "--verify", f"origin/{temp_branch}"],
+        capture_output=True,
+        text=True,
+    )
+
+    if remote_tracking_check.returncode == 0:
+        if verbose:
+            print(f"Deleting remote tracking branch 'origin/{temp_branch}'...")
+
+        delete_tracking_result = subprocess.run(
+            ["git", "branch", "-rd", f"origin/{temp_branch}"],
+            capture_output=True,
+            text=True,
+        )
+
+        if delete_tracking_result.returncode == 0:
+            if verbose:
+                print(f"Remote tracking branch 'origin/{temp_branch}' deleted")
+        else:
+            if verbose:
+                print(
+                    f"Warning: Could not delete remote tracking branch: {delete_tracking_result.stderr.strip()}"
+                )
 
     # Delete remote tracking branch (remotes/origin/branch) if it exists
     remote_tracking_check = subprocess.run(
@@ -256,7 +282,7 @@ def delete_local_branch(temp_branch, verbose):
 def delete_remote_branch(upstream_repo, temp_branch, verbose):
     """Delete remote branch using GitHub API."""
     if verbose:
-        print(f"Deleting remote branch {temp_branch}...")
+        print(f"Deleting remote branch '{temp_branch}'...")
 
     delete_result = subprocess.run(
         [
@@ -273,10 +299,10 @@ def delete_remote_branch(upstream_repo, temp_branch, verbose):
     if delete_result.returncode != 0:
         if verbose:
             print(
-                f"Warning: Could not delete remote branch {temp_branch}: {delete_result.stderr.strip()}"
+                f"Warning: Could not delete remote branch '{temp_branch}': {delete_result.stderr.strip()}"
             )
     elif verbose:
-        print(f"Remote branch {temp_branch} deleted")
+        print(f"Remote branch '{temp_branch}' deleted")
 
 
 def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
@@ -287,7 +313,7 @@ def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
     - If remote gone: just delete local
     """
     if verbose:
-        print(f"Checking if branch {temp_branch} still exists...")
+        print(f"Checking if branch '{temp_branch}' still exists...")
 
     # Single API call to check branch existence
     branch_exists = check_remote_branch_exists(upstream_repo, temp_branch)
@@ -299,7 +325,7 @@ def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
         delete_local_branch(temp_branch, verbose)
     else:
         if verbose:
-            print(f"Branch {temp_branch} already deleted by GitHub")
+            print(f"Branch '{temp_branch}' already deleted by GitHub")
         # Just delete local branch since remote is gone
         delete_local_branch(temp_branch, verbose)
 
@@ -402,7 +428,7 @@ def create_pr(
     # Get current branch
     original_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
     if verbose:
-        print(f"Current branch: {original_branch}")
+        print(f"Current branch: '{original_branch}'")
 
     # Check for staged changes
     if run_check(["git", "diff", "--cached", "--quiet"]):
@@ -424,13 +450,13 @@ def create_pr(
 
         # Push to remote
         if verbose:
-            print(f"Pushing branch {temp_branch} to {fork_repo}...")
+            print(f"Pushing branch '{temp_branch}' to '{fork_repo}'...")
         run(["git", "push", "-u", "origin", temp_branch], quiet=True)
 
         # Switch back to original branch
         run(["git", "checkout", original_branch], quiet=True)
         if verbose:
-            print(f"Switched back to original branch: {original_branch}")
+            print(f"Switched back to original branch: '{original_branch}'")
 
         if interactive:
             # Build and display compare URL for manual PR creation
@@ -476,23 +502,24 @@ def create_pr(
             ).stdout.strip()
 
             print("\nError occurred. Current state:", file=sys.stderr)
-            print(f"  Current branch: {current}", file=sys.stderr)
+            print(f"  Current branch: '{current}'", file=sys.stderr)
 
             if current != original_branch:
                 print(
-                    f"  Attempting to switch back to: {original_branch}",
+                    f"  Attempting to switch back to: '{original_branch}'",
                     file=sys.stderr,
                 )
                 subprocess.run(
                     ["git", "checkout", original_branch], capture_output=True
                 )
                 print(
-                    f"  Successfully switched back to: {original_branch}",
+                    f"  Successfully switched back to: '{original_branch}'",
                     file=sys.stderr,
                 )
             else:
                 print(
-                    f"  Already on original branch: {original_branch}", file=sys.stderr
+                    f"  Already on original branch: '{original_branch}'",
+                    file=sys.stderr,
                 )
         except Exception:
             print(
