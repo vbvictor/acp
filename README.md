@@ -36,20 +36,16 @@ The tool can also merge freshly created PR via `--merge` or `--auto-merge` optio
 
 **Prerequisites:** [Python 3.9+][python], [Git][git], and [GitHub CLI (gh)][gh]
 
-Install from source:
-
-```bash
-git clone https://github.com/vbvictor/acp.git
-cd acp
-pip install .
-# or install into venv
-pipx install .
-```
-
 Authenticate GitHub CLI (if you haven't already):
 
 ```bash
 gh auth login
+```
+
+Download and install the latest release directly (replace `VERSION` with the [latest release version](https://github.com/vbvictor/acp/releases/latest)):
+
+```bash
+pip install https://github.com/vbvictor/acp/releases/latest/download/acp-VERSION-py3-none-any.whl
 ```
 
 ## Usage
