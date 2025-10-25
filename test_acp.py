@@ -289,7 +289,8 @@ class TestCreatePR:
         # Capture output and verify URL format
         captured = capsys.readouterr()
         assert "PR creation URL:" in captured.out
-        assert "github.com/upstream/repo/pull/new/acp/" in captured.out
+        # For forks, URL should use fork repo (fork-owner/repo), not upstream
+        assert "github.com/fork-owner/repo/pull/new/acp/" in captured.out
 
         # Should not call gh pr create
         assert mock_run.call_count == 5
