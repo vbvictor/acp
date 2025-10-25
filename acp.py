@@ -27,6 +27,20 @@ def run_check(cmd):
     return result.returncode == 0
 
 
+def run_interactive(cmd):
+    """Run a command interactively with full terminal access.
+
+    This allows the command to read from stdin and write to stdout/stderr
+    directly, which is needed for hooks that require user input.
+    """
+    result = subprocess.run(cmd)
+    if result.returncode != 0:
+        print(
+            f"Error: Command failed with exit code {result.returncode}", file=sys.stderr
+        )
+        sys.exit(1)
+
+
 def parse_github_url(url):
     """Parse GitHub URL and extract owner/repo.
 
@@ -469,12 +483,13 @@ def create_pr(
         run(["git", "checkout", "-b", temp_branch], quiet=True)
         if verbose:
             print(f'Committing: "{commit_message}"')
-        run(["git", "commit", "-m", commit_message], quiet=True)
+        # Use interactive mode to allow commit hooks to prompt for input
+        run_interactive(["git", "commit", "-m", commit_message])
 
-        # Push to remote
+        # Push to remote (interactive to allow hooks to prompt for input)
         if verbose:
             print(f"Pushing branch '{temp_branch}' to '{fork_repo}'...")
-        run(["git", "push", "-u", "origin", temp_branch], quiet=True)
+        run_interactive(["git", "push", "-u", "origin", temp_branch])
 
         # Switch back to original branch
         run(["git", "checkout", original_branch], quiet=True)
