@@ -118,12 +118,12 @@ def check_on_main_branch():
         sys.exit(1)
 
 
-def check_acp_installed():
-    """Check if acp is installed and available."""
-    result = run_command("which acp", check=False)
-    if result.returncode != 0:
-        print("Error: acp is not installed or not in PATH", file=sys.stderr)
-        print("Please install acp first: pip install -e .", file=sys.stderr)
+def check_acp_exists():
+    """Check if acp.py exists in the current directory."""
+    acp_path = Path("acp.py")
+    if not acp_path.exists():
+        print("Error: acp.py not found in current directory", file=sys.stderr)
+        print("Please run this script from the repository root", file=sys.stderr)
         sys.exit(1)
 
 
@@ -134,13 +134,16 @@ def stage_files():
 
 
 def create_pr_and_merge(version):
-    """Create PR and merge it immediately using acp."""
+    """Create PR and merge it immediately using local acp.py.
+
+    Always uses --sync to ensure the current branch is updated with the merge.
+    """
     commit_message = f"chore: bump version to {version}"
 
     print(f"\nCreating PR with acp: '{commit_message}'")
 
     result = run_command(
-        f'acp pr "{commit_message}" --merge --merge-method squash -v',
+        f'python acp.py pr "{commit_message}" --merge --merge-method squash -v -s',
         check=False,
         capture_output=False,
     )
@@ -153,20 +156,11 @@ def create_pr_and_merge(version):
 
 
 def create_and_push_tag(version):
-    """Create and push the version tag."""
+    """Create and push the version tag.
+
+    Assumes the current branch is already synced (via acp --merge -s).
+    """
     tag_name = f"v{version}"
-
-    print("\nFetching latest changes from remote...")
-    result = run_command("git fetch origin main", check=False)
-    if result.returncode != 0:
-        print("Error: Failed to fetch from remote", file=sys.stderr)
-        sys.exit(1)
-
-    print("Syncing with origin/main...")
-    result = run_command("git reset --hard origin/main", check=False)
-    if result.returncode != 0:
-        print("Error: Failed to sync with origin/main", file=sys.stderr)
-        sys.exit(1)
 
     result = run_command(f"git tag -l {tag_name}", check=False)
     if result.stdout.strip():
@@ -212,10 +206,10 @@ Examples:
 
 Prerequisites:
   - On main branch with clean working directory
-  - acp installed (pip install -e .)
 
 The script updates version files, creates a PR, merges it,
 creates a tag, and triggers GitHub Actions for release.
+Uses the local acp.py script automatically.
         """,
     )
     parser.add_argument(
@@ -242,7 +236,7 @@ creates a tag, and triggers GitHub Actions for release.
     print("\nRunning pre-flight checks...")
     check_on_main_branch()
     check_git_status()
-    check_acp_installed()
+    check_acp_exists()
     print("All pre-flight checks passed")
 
     print("\nUpdating version files...")
