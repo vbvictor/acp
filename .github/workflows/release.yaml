@@ -39,20 +39,9 @@ jobs:
           files: |
             dist/*.whl
             dist/*.tar.gz
+          generate_release_notes: true
           body: |
-            ## Installation
-
-            ### From wheel file:
-            ```bash
-            pip install acp-${{ steps.get_version.outputs.VERSION }}-py3-none-any.whl
-            ```
-
-            ### From source tarball:
-            ```bash
-            pip install acp-${{ steps.get_version.outputs.VERSION }}.tar.gz
-            ```
-
-            ### Direct from GitHub:
+            ### Install directly from GitHub:
             ```bash
             pip install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/acp-${{ steps.get_version.outputs.VERSION }}-py3-none-any.whl
             ```
