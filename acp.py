@@ -145,8 +145,13 @@ def build_compare_url(upstream_repo, fork_repo, temp_branch, is_fork):
 
     Returns the URL for manual PR creation (same format as git push shows).
     """
-    # Format: https://github.com/owner/repo/pull/new/branch
-    return f"https://github.com/{upstream_repo}/pull/new/{temp_branch}"
+    if is_fork:
+        # For forks: use fork repo URL so user can create PR from their fork
+        # Format: https://github.com/fork-owner/repo/pull/new/branch
+        return f"https://github.com/{fork_repo}/pull/new/{temp_branch}"
+    else:
+        # For non-forks: https://github.com/owner/repo/pull/new/branch
+        return f"https://github.com/{upstream_repo}/pull/new/{temp_branch}"
 
 
 def create_github_pr(
