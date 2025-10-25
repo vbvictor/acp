@@ -32,11 +32,62 @@ def run_interactive(cmd):
 
     This allows the command to read from stdin and write to stdout/stderr
     directly, which is needed for hooks that require user input.
+
+    Filters out GitHub's remote messages (lines starting with "remote:").
     """
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
+    import os
+    import sys
+
+    # Create pipe for stderr filtering
+    read_fd, write_fd = os.pipe()
+
+    # Run command with stderr redirected to our pipe, stdin/stdout inherited
+    process = subprocess.Popen(cmd, stderr=write_fd)
+
+    # Close write end in parent
+    os.close(write_fd)
+
+    # Read and filter stderr in non-blocking mode
+    os.set_blocking(read_fd, False)
+    stderr_data = b""
+
+    while True:
+        # Check if process has finished
+        ret = process.poll()
+
+        # Read available stderr data
+        try:
+            chunk = os.read(read_fd, 4096)
+            if chunk:
+                stderr_data += chunk
+        except BlockingIOError:
+            pass
+
+        # If process finished and no more data, break
+        if ret is not None:
+            # Read any remaining data
+            try:
+                while True:
+                    chunk = os.read(read_fd, 4096)
+                    if not chunk:
+                        break
+                    stderr_data += chunk
+            except (BlockingIOError, OSError):
+                pass
+            break
+
+    os.close(read_fd)
+
+    # Filter and print stderr
+    if stderr_data:
+        for line in stderr_data.decode("utf-8", errors="replace").splitlines():
+            if not line.strip().startswith("remote:"):
+                print(line, file=sys.stderr)
+
+    if process.returncode != 0:
         print(
-            f"Error: Command failed with exit code {result.returncode}", file=sys.stderr
+            f"Error: Command failed with exit code {process.returncode}",
+            file=sys.stderr,
         )
         sys.exit(1)
 
@@ -489,12 +540,14 @@ def create_pr(
         if verbose:
             print(f'Committing: "{commit_message}"')
         # Use interactive mode to allow commit hooks to prompt for input
-        run_interactive(["git", "commit", "-m", commit_message])
+        # --quiet flag suppresses git output but hooks can still prompt
+        run_interactive(["git", "commit", "--quiet", "-m", commit_message])
 
         # Push to remote (interactive to allow hooks to prompt for input)
         if verbose:
             print(f"Pushing branch '{temp_branch}' to '{fork_repo}'...")
-        run_interactive(["git", "push", "-u", "origin", temp_branch])
+        # --quiet flag suppresses git output but hooks can still prompt
+        run_interactive(["git", "push", "--quiet", "-u", "origin", temp_branch])
 
         # Switch back to original branch
         run(["git", "checkout", original_branch], quiet=True)
