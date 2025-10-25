@@ -59,9 +59,12 @@ class TestCreatePR:
         assert exc.value.code == 1
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_not_fork_ssh(self, mock_run_check, mock_run, mock_subprocess):
+    def test_create_pr_not_fork_ssh(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
         """Test PR creation in non-fork repo with SSH URL."""
         mock_run_check.return_value = False  # Has staged changes
 
@@ -74,8 +77,8 @@ class TestCreatePR:
             "testuser",  # get gh username
             "git@github.com:user/repo.git",  # git remote get-url origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
         ]
@@ -84,14 +87,19 @@ class TestCreatePR:
 
         # Verify PR was created to same repo (not a fork)
         calls = mock_run.call_args_list
-        pr_create_call = calls[7]  # Updated index after adding checkout
+        pr_create_call = calls[
+            5
+        ]  # Updated index after removing git commit and git push from run() calls
         # Should use --head branch (not owner:branch)
         assert "--head" in str(pr_create_call)
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_not_fork_https(self, mock_run_check, mock_run, mock_subprocess):
+    def test_create_pr_not_fork_https(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
         """Test PR creation in non-fork repo with HTTPS URL."""
         mock_run_check.return_value = False
 
@@ -103,19 +111,22 @@ class TestCreatePR:
             "testuser",
             "https://github.com/user/repo.git",  # HTTPS origin URL
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
+            None,  # git checkout original
             "https://github.com/user/repo/pull/1",
-            None,
         ]
 
         acp.create_pr("test commit", verbose=False, body="")
-        assert mock_run.call_count == 8
+        assert mock_run.call_count == 6
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_fork_ssh(self, mock_run_check, mock_run, mock_subprocess):
+    def test_create_pr_fork_ssh(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
         """Test PR creation on a fork with SSH URLs."""
         mock_run_check.return_value = False
 
@@ -129,8 +140,8 @@ class TestCreatePR:
             "testuser",
             "git@github.com:fork-owner/repo.git",  # origin (fork)
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/upstream/repo/pull/1",  # gh pr create
         ]
@@ -139,13 +150,18 @@ class TestCreatePR:
 
         # Check that PR was created with fork-owner:branch format
         calls = mock_run.call_args_list
-        pr_create_call = calls[7]  # Updated index after adding checkout
+        pr_create_call = calls[
+            5
+        ]  # Updated index after removing git commit and git push from run() calls
         assert "fork-owner:" in str(pr_create_call)
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
-    def test_create_pr_fork_https(self, mock_run_check, mock_run, mock_subprocess):
+    def test_create_pr_fork_https(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
         """Test PR creation on a fork with HTTPS URLs."""
         mock_run_check.return_value = False
 
@@ -159,8 +175,8 @@ class TestCreatePR:
             "testuser",
             "https://github.com/fork-owner/repo.git",  # origin (fork)
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/upstream/repo/pull/1",  # gh pr create
         ]
@@ -169,7 +185,9 @@ class TestCreatePR:
 
         # Verify fork logic was used
         calls = mock_run.call_args_list
-        pr_create_call = calls[7]  # Updated index after adding checkout
+        pr_create_call = calls[
+            5
+        ]  # Updated index after removing git commit and git push from run() calls
         assert "fork-owner:" in str(pr_create_call)
 
     @mock.patch("acp.run")
@@ -189,10 +207,11 @@ class TestCreatePR:
         assert exc.value.code == 1
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_upstream_not_github(
-        self, mock_run_check, mock_run, mock_subprocess
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test PR creation fails when upstream is not GitHub."""
         mock_run_check.return_value = False
@@ -213,10 +232,11 @@ class TestCreatePR:
         assert exc.value.code == 1
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_interactive_non_fork(
-        self, mock_run_check, mock_run, mock_subprocess
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test interactive mode on non-fork repo."""
         mock_run_check.return_value = False
@@ -229,21 +249,22 @@ class TestCreatePR:
             "testuser",
             "git@github.com:user/repo.git",  # origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original
         ]
 
         acp.create_pr("test commit", verbose=False, body="", interactive=True)
 
-        # Should not call gh pr create (only 7 calls, not 8)
-        assert mock_run.call_count == 7
+        # Should not call gh pr create (only 5 calls, not 6)
+        assert mock_run.call_count == 5
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_interactive_fork(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test interactive mode on fork with correct URL format."""
         mock_run_check.return_value = False
@@ -258,8 +279,8 @@ class TestCreatePR:
             "testuser",
             "git@github.com:fork-owner/repo.git",  # origin (fork)
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original
         ]
 
@@ -271,13 +292,14 @@ class TestCreatePR:
         assert "github.com/upstream/repo/pull/new/acp/" in captured.out
 
         # Should not call gh pr create
-        assert mock_run.call_count == 7
+        assert mock_run.call_count == 5
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_interactive_non_fork_url(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test interactive mode URL format for non-fork."""
         mock_run_check.return_value = False
@@ -327,10 +349,11 @@ class TestCreatePR:
         assert exc.value.code == 1
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_with_merge(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation with immediate merge."""
         mock_run_check.return_value = False  # Has staged changes
@@ -387,8 +410,8 @@ class TestCreatePR:
             "testuser",  # gh username
             "git@github.com:user/repo.git",  # origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
         ]
@@ -438,10 +461,11 @@ class TestCreatePR:
         assert "merged!" in captured.out
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_with_auto_merge(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation with auto-merge enabled."""
         mock_run_check.return_value = False  # Has staged changes
@@ -464,8 +488,8 @@ class TestCreatePR:
             "testuser",  # gh username
             "git@github.com:user/repo.git",  # origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
         ]
@@ -499,10 +523,11 @@ class TestCreatePR:
         assert "will auto-merge when checks pass" in captured.out
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_with_merge_verbose(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation with merge in verbose mode."""
         mock_run_check.return_value = False  # Has staged changes
@@ -557,8 +582,8 @@ class TestCreatePR:
             "testuser",  # gh username
             "git@github.com:user/repo.git",  # origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
         ]
@@ -578,10 +603,11 @@ class TestCreatePR:
         assert "merged!" in captured.out
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_with_merge_failure(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation when merge fails - should show PR created and error."""
         mock_run_check.return_value = False  # Has staged changes
@@ -611,8 +637,8 @@ class TestCreatePR:
             "testuser",  # gh username
             "git@github.com:user/repo.git",  # origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
         ]
@@ -631,10 +657,11 @@ class TestCreatePR:
         assert "Merge commits are not allowed" in captured.err
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_create_pr_with_auto_merge_failure(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation when auto-merge fails - should show PR created and error."""
         mock_run_check.return_value = False  # Has staged changes
@@ -661,8 +688,8 @@ class TestCreatePR:
             "testuser",  # gh username
             "git@github.com:user/repo.git",  # origin
             None,  # git checkout -b
-            None,  # git commit
-            None,  # git push
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,  # git checkout original (moved before PR creation)
             "https://github.com/user/repo/pull/1",  # gh pr create
         ]
@@ -803,10 +830,11 @@ class TestMain:
             )
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_merge_method_merge(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test --merge with merge method."""
         mock_run_check.return_value = False
@@ -834,8 +862,8 @@ class TestMain:
             "testuser",
             "git@github.com:user/repo.git",
             None,
-            None,
-            None,
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,
             "https://github.com/user/repo/pull/1",
         ]
@@ -850,10 +878,11 @@ class TestMain:
         assert "--merge" in str(merge_calls[0])
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_merge_method_rebase(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test --merge with rebase method."""
         mock_run_check.return_value = False
@@ -881,8 +910,8 @@ class TestMain:
             "testuser",
             "git@github.com:user/repo.git",
             None,
-            None,
-            None,
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,
             "https://github.com/user/repo/pull/1",
         ]
@@ -905,10 +934,11 @@ class TestMain:
         assert exc.value.code == 1
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_merge_with_branch_already_deleted(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test merge succeeds when branch check shows it's already deleted by GitHub."""
         mock_run_check.return_value = False
@@ -940,8 +970,8 @@ class TestMain:
             "testuser",
             "git@github.com:user/repo.git",
             None,
-            None,
-            None,
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,
             "https://github.com/user/repo/pull/1",
         ]
@@ -955,10 +985,11 @@ class TestMain:
         assert "Error" not in captured.err
 
     @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
     def test_merge_with_http_404_only(
-        self, mock_run_check, mock_run, mock_subprocess, capsys
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test merge succeeds when branch check returns HTTP 404."""
         mock_run_check.return_value = False
@@ -990,8 +1021,8 @@ class TestMain:
             "testuser",
             "git@github.com:user/repo.git",
             None,
-            None,
-            None,
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
             None,
             "https://github.com/user/repo/pull/1",
         ]
