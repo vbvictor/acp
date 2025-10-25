@@ -42,10 +42,10 @@ Authenticate GitHub CLI (if you haven't already):
 gh auth login
 ```
 
-Download and install the latest release directly (replace `VERSION` with the [latest release version](https://github.com/vbvictor/acp/releases/latest)):
+Download and install the latest release directly via `pip` or `pipx`:
 
 ```bash
-pip install https://github.com/vbvictor/acp/releases/latest/download/acp-VERSION-py3-none-any.whl
+pip install https://github.com/vbvictor/acp/releases/latest/download/acp-0.4.0-py3-none-any.whl
 ```
 
 ## Usage
