@@ -357,7 +357,10 @@ def merge_pr(
         )
         sys.exit(1)
 
-    # Clean up both remote and local branches
+    # Print merge success immediately
+    print(f'PR "{commit_message}" ({pr_url}) merged!')
+
+    # Clean up both remote and local branches (verbose controls output within the function)
     cleanup_branches_after_merge(upstream_repo, temp_branch, verbose)
 
     # Sync current branch with remote if requested
@@ -376,8 +379,6 @@ def merge_pr(
             )
         elif verbose:
             print(f"Branch '{original_branch}' synced successfully")
-
-    print(f'PR "{commit_message}" ({pr_url}) merged!')
 
 
 def enable_auto_merge(pr_url, commit_message, merge_method, verbose):
