@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
 
+# yamllint disable rule:line-length
 jobs:
   release:
     runs-on: ubuntu-latest
