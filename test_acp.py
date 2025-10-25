@@ -268,10 +268,7 @@ class TestCreatePR:
         # Capture output and verify URL format
         captured = capsys.readouterr()
         assert "PR creation URL:" in captured.out
-        assert (
-            "github.com/upstream/repo/compare/main...fork-owner:repo:" in captured.out
-        )
-        assert "?expand=1" in captured.out
+        assert "github.com/upstream/repo/pull/new/acp/" in captured.out
 
         # Should not call gh pr create
         assert mock_run.call_count == 7
@@ -303,8 +300,7 @@ class TestCreatePR:
         # Verify URL format for non-fork
         captured = capsys.readouterr()
         assert "PR creation URL:" in captured.out
-        assert "github.com/user/myrepo/compare/main...acp/" in captured.out
-        assert "?expand=1" in captured.out
+        assert "github.com/user/myrepo/pull/new/acp/" in captured.out
 
     def test_create_pr_merge_with_interactive_error(self):
         """Test that --merge with --interactive raises error."""
