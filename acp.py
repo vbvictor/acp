@@ -127,19 +127,12 @@ def generate_temp_branch_name(verbose):
 
 
 def build_compare_url(upstream_repo, fork_repo, temp_branch, is_fork):
-    """Build GitHub compare URL for interactive mode.
+    """Build GitHub PR creation URL for interactive mode.
 
-    Returns the URL for manual PR creation.
+    Returns the URL for manual PR creation (same format as git push shows).
     """
-    upstream_base = upstream_repo.split("/")[-1]  # repo name
-
-    if is_fork:
-        fork_owner = fork_repo.split("/")[0]
-        # Format: https://github.com/upstream/repo/compare/main...fork-owner:repo:branch?expand=1
-        return f"https://github.com/{upstream_repo}/compare/main...{fork_owner}:{upstream_base}:{temp_branch}?expand=1"
-
-    # Format: https://github.com/owner/repo/compare/main...branch?expand=1
-    return f"https://github.com/{upstream_repo}/compare/main...{temp_branch}?expand=1"
+    # Format: https://github.com/owner/repo/pull/new/branch
+    return f"https://github.com/{upstream_repo}/pull/new/{temp_branch}"
 
 
 def create_github_pr(
