@@ -15,6 +15,7 @@ Example:
     python tools/release.py 0.4.0
 """
 
+import argparse
 import re
 import subprocess
 import sys
@@ -201,12 +202,30 @@ def create_and_push_tag(version):
 
 def main():
     """Main release automation workflow."""
-    if len(sys.argv) != 2:
-        print("Usage: python tools/release.py <version>")
-        print("Example: python tools/release.py 0.4.0")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Automate the acp release process",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python tools/release.py 0.4.0
+  python tools/release.py 1.0.0
 
-    new_version = validate_version(sys.argv[1])
+Prerequisites:
+  - On main branch with clean working directory
+  - acp installed (pip install -e .)
+
+The script updates version files, creates a PR, merges it,
+creates a tag, and triggers GitHub Actions for release.
+        """,
+    )
+    parser.add_argument(
+        "version",
+        help="version number (X.Y.Z format)",
+    )
+
+    args = parser.parse_args()
+
+    new_version = validate_version(args.version)
     current_version = get_current_version()
 
     print("ACP Release Automation")
