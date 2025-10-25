@@ -1,5 +1,6 @@
 # acp - Automatic Commit Pusher
 
+[![Release](https://img.shields.io/github/v/release/vbvictor/acp)](https://github.com/vbvictor/acp/releases/latest)
 [![Python Tests](https://github.com/vbvictor/acp/actions/workflows/tests.yaml/badge.svg)](https://github.com/vbvictor/acp/actions/workflows/tests.yaml)
 [![Code Lint](https://github.com/vbvictor/acp/actions/workflows/code-lint.yaml/badge.svg)](https://github.com/vbvictor/acp/actions/workflows/code-lint.yaml)
 [![Code Format](https://github.com/vbvictor/acp/actions/workflows/code-format.yaml/badge.svg)](https://github.com/vbvictor/acp/actions/workflows/code-format.yaml)
