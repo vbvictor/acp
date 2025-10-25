@@ -323,10 +323,20 @@ def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
         delete_local_branch(temp_branch, verbose)
 
 
-def merge_pr(pr_url, commit_message, merge_method, upstream_repo, temp_branch, verbose):
+def merge_pr(
+    pr_url,
+    commit_message,
+    merge_method,
+    upstream_repo,
+    temp_branch,
+    verbose,
+    sync,
+    original_branch,
+):
     """Merge a PR immediately after creation.
 
     Also attempts to delete the remote branch and local branch after merging.
+    If sync is True, pulls changes to the original branch after merge.
     """
     if verbose:
         print(f"Merging PR immediately (method: {merge_method})...")
@@ -349,6 +359,23 @@ def merge_pr(pr_url, commit_message, merge_method, upstream_repo, temp_branch, v
 
     # Clean up both remote and local branches
     cleanup_branches_after_merge(upstream_repo, temp_branch, verbose)
+
+    # Sync current branch with remote if requested
+    if sync:
+        if verbose:
+            print(f"Syncing branch '{original_branch}' with remote...")
+        pull_result = subprocess.run(
+            ["git", "pull", "origin", original_branch],
+            capture_output=True,
+            text=True,
+        )
+        if pull_result.returncode != 0:
+            print(
+                f"Warning: Failed to sync branch '{original_branch}': {pull_result.stderr.strip()}",
+                file=sys.stderr,
+            )
+        elif verbose:
+            print(f"Branch '{original_branch}' synced successfully")
 
     print(f'PR "{commit_message}" ({pr_url}) merged!')
 
@@ -397,6 +424,7 @@ def show_help():
     print(
         "  --merge-method <method>     Merge method: squash (default), merge, or rebase"
     )
+    print("  -s, --sync                  Sync current branch with remote after --merge")
     print("  --version                   Show version number")
     print("  -h, --help                  Show this help message")
     print()
@@ -413,6 +441,7 @@ def create_pr(
     merge=False,
     auto_merge=False,
     merge_method="squash",
+    sync=False,
 ):
     """Create a PR with staged changes."""
     # Validate inputs
@@ -478,6 +507,8 @@ def create_pr(
                     upstream_repo,
                     temp_branch,
                     verbose,
+                    sync,
+                    original_branch,
                 )
             elif auto_merge:
                 enable_auto_merge(pr_url, commit_message, merge_method, verbose)
@@ -557,6 +588,12 @@ def main():
         choices=["merge", "squash", "rebase"],
         help="Merge method: squash (default), merge, or rebase",
     )
+    parser.add_argument(
+        "-s",
+        "--sync",
+        action="store_true",
+        help="Sync current branch with remote after merge",
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
@@ -583,6 +620,7 @@ def main():
             merge=args.merge,
             auto_merge=args.auto_merge,
             merge_method=args.merge_method,
+            sync=args.sync,
         )
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)

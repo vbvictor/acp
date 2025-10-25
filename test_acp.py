@@ -674,6 +674,7 @@ class TestCreatePR:
                 body="",
                 auto_merge=True,
                 merge_method="squash",
+                sync=False,
             )
 
         assert exc.value.code == 1
@@ -732,6 +733,7 @@ class TestMain:
                 merge=False,
                 auto_merge=False,
                 merge_method="squash",
+                sync=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -747,6 +749,7 @@ class TestMain:
                 merge=False,
                 auto_merge=False,
                 merge_method="squash",
+                sync=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -762,6 +765,7 @@ class TestMain:
                 merge=True,
                 auto_merge=False,
                 merge_method="squash",
+                sync=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -777,6 +781,7 @@ class TestMain:
                 merge=False,
                 auto_merge=True,
                 merge_method="squash",
+                sync=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -794,6 +799,7 @@ class TestMain:
                 merge=True,
                 auto_merge=False,
                 merge_method="rebase",
+                sync=False,
             )
 
     @mock.patch("subprocess.run")
