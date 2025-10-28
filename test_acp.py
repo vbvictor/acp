@@ -66,7 +66,9 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test PR creation in non-fork repo with SSH URL."""
-        mock_run_check.return_value = False  # Has staged changes
+        # First call: has staged changes (False = has changes)
+        # Second call: no unstaged changes (True = no unstaged changes)
+        mock_run_check.side_effect = [False, True]
 
         # Mock subprocess.run for upstream check (should fail - no upstream)
         mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
@@ -101,7 +103,9 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test PR creation in non-fork repo with HTTPS URL."""
-        mock_run_check.return_value = False
+        # First call: has staged changes (False = has changes)
+        # Second call: no unstaged changes (True = no unstaged changes)
+        mock_run_check.side_effect = [False, True]
 
         # No upstream remote
         mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
@@ -128,7 +132,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test PR creation on a fork with SSH URLs."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         # Mock upstream remote exists
         mock_subprocess.return_value = mock.Mock(
@@ -163,7 +167,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test PR creation on a fork with HTTPS URLs."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         # Mock upstream remote exists
         mock_subprocess.return_value = mock.Mock(
@@ -194,7 +198,7 @@ class TestCreatePR:
     @mock.patch("acp.run_check")
     def test_create_pr_not_github(self, mock_run_check, mock_run):
         """Test PR creation fails for non-GitHub repos."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         mock_run.side_effect = [
             "main",
@@ -214,7 +218,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test PR creation fails when upstream is not GitHub."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         # Mock upstream remote exists but not GitHub
         mock_subprocess.return_value = mock.Mock(
@@ -239,7 +243,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
     ):
         """Test interactive mode on non-fork repo."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         # No upstream remote
         mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
@@ -267,7 +271,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test interactive mode on fork with correct URL format."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         # Mock upstream remote exists
         mock_subprocess.return_value = mock.Mock(
@@ -303,7 +307,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test interactive mode URL format for non-fork."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         # No upstream remote
         mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
@@ -357,7 +361,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation with immediate merge."""
-        mock_run_check.return_value = False  # Has staged changes
+        mock_run_check.side_effect = [False, True]  # Has staged changes
 
         api_check_count = {"count": 0}
 
@@ -469,7 +473,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation with auto-merge enabled."""
-        mock_run_check.return_value = False  # Has staged changes
+        mock_run_check.side_effect = [False, True]  # Has staged changes
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -531,7 +535,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation with merge in verbose mode."""
-        mock_run_check.return_value = False  # Has staged changes
+        mock_run_check.side_effect = [False, True]  # Has staged changes
 
         api_check_count = {"count": 0}
 
@@ -611,7 +615,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation when merge fails - should show PR created and error."""
-        mock_run_check.return_value = False  # Has staged changes
+        mock_run_check.side_effect = [False, True]  # Has staged changes
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -665,7 +669,7 @@ class TestCreatePR:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test PR creation when auto-merge fails - should show PR created and error."""
-        mock_run_check.return_value = False  # Has staged changes
+        mock_run_check.side_effect = [False, True]  # Has staged changes
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -838,7 +842,7 @@ class TestMain:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test --merge with merge method."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -886,7 +890,7 @@ class TestMain:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test --merge with rebase method."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -938,11 +942,122 @@ class TestMain:
     @mock.patch("acp.run_interactive")
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
+    def test_create_pr_with_unstaged_changes(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
+        """Test PR creation with unstaged changes stashes and restores them."""
+        # First call: has staged changes (False = has changes)
+        # Second call: has unstaged changes (False = has unstaged changes)
+        mock_run_check.side_effect = [False, False]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Stash pop - return success
+            elif "stash" in str(cmd) and "pop" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",  # get current branch
+            "testuser",  # get gh username
+            "git@github.com:user/repo.git",  # git remote get-url origin
+            None,  # git checkout -b
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
+            None,  # git stash push
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="")
+
+        # Verify stash push was called with unique ID
+        stash_push_calls = [
+            call
+            for call in mock_run.call_args_list
+            if len(call[0]) > 0
+            and "stash" in str(call[0][0])
+            and "push" in str(call[0][0])
+        ]
+        assert len(stash_push_calls) == 1
+        # Verify the stash message contains acp-stash prefix
+        assert "acp-stash-" in str(stash_push_calls[0])
+
+        # Verify stash pop was called via subprocess.run
+        stash_pop_calls = [
+            call
+            for call in mock_subprocess.call_args_list
+            if len(call[0]) > 0
+            and "stash" in str(call[0][0])
+            and "pop" in str(call[0][0])
+        ]
+        assert len(stash_pop_calls) == 1
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_unstaged_changes_conflict(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
+    ):
+        """Test PR creation with unstaged changes that conflict on stash pop."""
+        # First call: has staged changes (False = has changes)
+        # Second call: has unstaged changes (False = has unstaged changes)
+        mock_run_check.side_effect = [False, False]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            # Upstream check - return error (no upstream)
+            if "upstream" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            # Stash pop - return failure (conflict)
+            elif "stash" in str(cmd) and "pop" in str(cmd):
+                return mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr="CONFLICT (content): Merge conflict in file.txt",
+                )
+            # Default
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        mock_run.side_effect = [
+            "main",  # get current branch
+            "testuser",  # get gh username
+            "git@github.com:user/repo.git",  # git remote get-url origin
+            None,  # git checkout -b
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
+            None,  # git stash push
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="")
+
+        # Verify warning message was printed
+        captured = capsys.readouterr()
+        assert "Failed to automatically restore stashed changes" in captured.err
+        assert "acp-stash-" in captured.err
+        assert "git stash apply" in captured.err
+        assert "git stash drop" in captured.err
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
     def test_merge_with_branch_already_deleted(
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test merge succeeds when branch check shows it's already deleted by GitHub."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]
@@ -993,7 +1108,7 @@ class TestMain:
         self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
     ):
         """Test merge succeeds when branch check returns HTTP 404."""
-        mock_run_check.return_value = False
+        mock_run_check.side_effect = [False, True]
 
         def subprocess_side_effect(*args, **kwargs):
             cmd = args[0]

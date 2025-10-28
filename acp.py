@@ -549,10 +549,55 @@ def create_pr(
         # --quiet flag suppresses git output but hooks can still prompt
         run_interactive(["git", "push", "--quiet", "-u", "origin", temp_branch])
 
+        # Check if there are any unstaged changes before switching
+        has_unstaged = not run_check(["git", "diff", "--quiet"])
+        stash_id = None
+
+        if has_unstaged:
+            # Create unique stash ID using timestamp
+            import time
+
+            timestamp = int(time.time())
+            stash_id = f"acp-stash-{timestamp}"
+
+            if verbose:
+                print(f"Stashing unstaged changes as '{stash_id}'...")
+            run(["git", "stash", "push", "-m", stash_id], quiet=True)
+
         # Switch back to original branch
         run(["git", "checkout", original_branch], quiet=True)
         if verbose:
             print(f"Switched back to original branch: '{original_branch}'")
+
+        # Restore stashed changes if any
+        if stash_id:
+            if verbose:
+                print("Restoring stashed changes...")
+
+            # Try to apply the stash
+            stash_pop_result = subprocess.run(
+                ["git", "stash", "pop"], capture_output=True, text=True
+            )
+
+            if stash_pop_result.returncode != 0:
+                # Stash pop failed (likely due to conflicts)
+                print(
+                    "\nWarning: Failed to automatically restore stashed changes due to conflicts.",
+                    file=sys.stderr,
+                )
+                print(
+                    f"Your changes are safely stored in stash: '{stash_id}'",
+                    file=sys.stderr,
+                )
+                print(
+                    f"To manually apply them, run: git stash apply 'stash^{{/{stash_id}}}'",
+                    file=sys.stderr,
+                )
+                print(
+                    f"After resolving conflicts, drop the stash with: git stash drop 'stash^{{/{stash_id}}}'",
+                    file=sys.stderr,
+                )
+                # Note: We continue execution rather than exiting, as the PR was created successfully
 
         if interactive:
             # Build and display compare URL for manual PR creation
