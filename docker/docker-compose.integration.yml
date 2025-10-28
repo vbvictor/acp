@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  integration-test:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.integration
+    environment:
+      # Pass GitHub token from host environment
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Optionally override test repository configuration
+      - ACP_TEST_ORG=${ACP_TEST_ORG:-acp-integration-test}
+      - ACP_TEST_REPO=${ACP_TEST_REPO:-test-repo}
+      - ACP_TEST_UPSTREAM=${ACP_TEST_UPSTREAM:-upstream-repo}
+      - ACP_TEST_FORK_OWNER=${ACP_TEST_FORK_OWNER:-test-user}
+    volumes:
+      # Mount source code for development
+      - ../acp.py:/app/acp.py:ro
+      - ../test_integration.py:/app/test_integration.py:ro
+    command: pytest test_integration.py -v -m integration --tb=short

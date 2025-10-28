@@ -1,0 +1,39 @@
+# Dockerfile for running acp integration tests
+#
+# Build: docker build -f docker/Dockerfile.integration -t acp-integration-test .
+# Run: docker run --rm -e GITHUB_TOKEN=$GITHUB_TOKEN acp-integration-test
+
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install GitHub CLI
+RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set up working directory
+WORKDIR /app
+
+# Copy requirements (if any) and install Python dependencies
+COPY requirements*.txt* ./
+RUN pip install --no-cache-dir pytest || true
+
+# Copy application code
+COPY acp.py .
+COPY test_integration.py .
+COPY test_acp.py .
+
+# Set git configuration
+RUN git config --global user.name "ACP Integration Test" \
+    && git config --global user.email "test@acp-integration.test"
+
+# Run integration tests by default
+CMD ["pytest", "test_integration.py", "-v", "-m", "integration", "--tb=short"]
