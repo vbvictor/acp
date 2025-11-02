@@ -94,8 +94,16 @@ Create a virtual environment, install dev dependencies, and run tests:
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -e ".[dev]"
-pytest test_acp.py -v
+
+# Run unit tests (fast, no GitHub token needed)
+pytest
+
+# Run integration tests (requires GitHub token and test repos)
+export GITHUB_TOKEN="your_token"
+pytest -m integration
 ```
+
+See [docs/INTEGRATION_TESTING.md](docs/INTEGRATION_TESTING.md) for setting up integration tests with real GitHub repositories.
 
 ### Submit your PR
 

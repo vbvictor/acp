@@ -38,3 +38,10 @@ py-modules = ["acp"]
 [tool.ruff]
 # Ignore line length rules (E501) - using black for formatting
 ignore = ["E501"]
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: integration tests that use real GitHub repositories (deselect with '-m \"not integration\"')",
+]
+# By default, run only unit tests
+addopts = "-v -m 'not integration'"
