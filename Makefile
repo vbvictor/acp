@@ -1,24 +1,30 @@
-.PHONY: help test clean
+.PHONY: help activate test lint clean
 
 # Default target
 help:
 	@echo "ACP - Automatic Commit Pusher"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  make test   - Run unit tests"
-	@echo "  make clean  - Clean up test artifacts"
+	@echo "  make activate - Create venv and install dev dependencies"
+	@echo "  make test     - Run unit tests"
+	@echo "  make lint     - Run ruff/black linter"
+	@echo "  make clean    - Clean up test artifacts"
 
 # Setup dev environment
 activate:
 	@echo "Setting up development environment..."
-	python -m venv venv
+	python3 -m venv venv
 	venv/bin/pip install -e ".[dev]"
-	@echo "Done! Run 'source venv/bin/activate' to activate the environment."
+	@echo "Done!"
 
 # Unit tests
 test:
-	@echo "Running unit tests..."
-	pytest test_acp.py -v
+	venv/bin/pytest test_acp.py -v
+
+# Format and lint code
+lint:
+	venv/bin/black .
+	venv/bin/ruff check .
 
 # Clean up test artifacts
 clean:
