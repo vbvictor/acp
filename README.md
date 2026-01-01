@@ -89,13 +89,12 @@ Contributions welcome! Please open an issue if you have an idea or submit a pull
 
 ### Developer environment
 
-Create a virtual environment, install dev dependencies, and run tests:
+To create a virtual environment, install dev dependencies, and run tests:
 
 ```bash
-python -m venv venv
+make activate
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -e ".[dev]"
-pytest test_acp.py -v
+make test
 ```
 
 ### Submit your PR

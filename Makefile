@@ -8,6 +8,13 @@ help:
 	@echo "  make test   - Run unit tests"
 	@echo "  make clean  - Clean up test artifacts"
 
+# Setup dev environment
+activate:
+	@echo "Setting up development environment..."
+	python -m venv venv
+	venv/bin/pip install -e ".[dev]"
+	@echo "Done! Run 'source venv/bin/activate' to activate the environment."
+
 # Unit tests
 test:
 	@echo "Running unit tests..."
