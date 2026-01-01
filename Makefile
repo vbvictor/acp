@@ -7,7 +7,7 @@ help:
 	@echo "Available targets:"
 	@echo "  make activate - Create venv and install dev dependencies"
 	@echo "  make test     - Run unit tests"
-	@echo "  make lint     - Run ruff/black linter"
+	@echo "  make lint     - Run linters/formatters"
 	@echo "  make clean    - Clean up test artifacts"
 
 # Setup dev environment
@@ -25,6 +25,7 @@ test:
 lint:
 	venv/bin/black .
 	venv/bin/ruff check .
+	venv/bin/yamllint -c .yamllint.yaml .github/workflows/
 
 # Clean up test artifacts
 clean:
