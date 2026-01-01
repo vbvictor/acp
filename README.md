@@ -92,9 +92,9 @@ Contributions welcome! Please open an issue if you have an idea or submit a pull
 To create a virtual environment, install dev dependencies, and run tests:
 
 ```bash
-make activate
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-make test
+make activate # Create venv and install dev dependencies
+make test     # Run tests
+make lint     # Run ruff/black
 ```
 
 ### Submit your PR

@@ -14,25 +14,26 @@ committing, pushing, and PR creation automatically.
 ## Common Commands
 
 ```bash
+# Setup dev environment (creates venv and installs dependencies)
+make setup
+
 # Run tests
-pytest test_acp.py -v
 make test
 
 # Run single test
-pytest test_acp.py::TestClassName::test_method_name -v
+venv/bin/pytest test_acp.py::TestClassName::test_method_name -v
 
 # Run with coverage
-pytest test_acp.py --cov=acp --cov-report=term-missing
+venv/bin/pytest test_acp.py --cov=acp --cov-report=term-missing
+
+# Linting
+make lint
+
+# Format code
+make format
 
 # Clean test artifacts
 make clean
-
-# Install for development
-pip install -e ".[dev]"
-
-# Linting (checked in CI)
-ruff check acp.py test_acp.py
-black acp.py test_acp.py
 ```
 
 ## Architecture
