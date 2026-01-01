@@ -1162,5 +1162,105 @@ class TestMain:
             assert exc.value.code == 130
 
 
+class TestStripBranchPrefix:
+    """Test the strip_branch_prefix() function."""
+
+    def test_strip_prefix_with_colon(self):
+        """Test stripping username prefix from branch name."""
+        assert (
+            acp.strip_branch_prefix("vbvictor:acp/vbvictor/1234") == "acp/vbvictor/1234"
+        )
+
+    def test_strip_prefix_without_colon(self):
+        """Test branch name without prefix is unchanged."""
+        assert acp.strip_branch_prefix("acp/vbvictor/1234") == "acp/vbvictor/1234"
+
+    def test_strip_prefix_simple_branch(self):
+        """Test simple branch name without prefix."""
+        assert acp.strip_branch_prefix("feature-branch") == "feature-branch"
+
+    def test_strip_prefix_multiple_colons(self):
+        """Test branch with multiple colons only strips first."""
+        assert (
+            acp.strip_branch_prefix("user:branch:with:colons") == "branch:with:colons"
+        )
+
+    def test_strip_prefix_empty_after_colon(self):
+        """Test branch with empty name after colon."""
+        assert acp.strip_branch_prefix("user:") == ""
+
+
+class TestIsGithubUser:
+    """Test the is_github_user() function."""
+
+    @mock.patch("subprocess.run")
+    def test_valid_github_user(self, mock_run):
+        """Test returns True for valid GitHub user."""
+        mock_run.return_value = mock.Mock(returncode=0)
+        assert acp.is_github_user("vbvictor") is True
+        mock_run.assert_called_once_with(
+            ["gh", "api", "users/vbvictor"],
+            capture_output=True,
+            text=True,
+        )
+
+    @mock.patch("subprocess.run")
+    def test_invalid_github_user(self, mock_run):
+        """Test returns False for invalid GitHub user."""
+        mock_run.return_value = mock.Mock(returncode=1)
+        assert acp.is_github_user("not-a-real-user-12345") is False
+
+
+class TestCheckoutBranch:
+    """Test the checkout_branch() function."""
+
+    @mock.patch("acp.run")
+    @mock.patch("acp.is_github_user")
+    def test_checkout_with_valid_user_prefix(self, mock_is_user, mock_run):
+        """Test checkout strips prefix when it's a valid GitHub user."""
+        mock_is_user.return_value = True
+        acp.checkout_branch("vbvictor:acp/vbvictor/1234")
+        mock_is_user.assert_called_once_with("vbvictor")
+        mock_run.assert_called_once_with(["git", "checkout", "acp/vbvictor/1234"])
+
+    @mock.patch("acp.run")
+    @mock.patch("acp.is_github_user")
+    def test_checkout_with_invalid_user_prefix(self, mock_is_user, mock_run):
+        """Test checkout keeps branch as-is when prefix is not a GitHub user."""
+        mock_is_user.return_value = False
+        acp.checkout_branch("feature:fix")
+        mock_is_user.assert_called_once_with("feature")
+        mock_run.assert_called_once_with(["git", "checkout", "feature:fix"])
+
+    @mock.patch("acp.run")
+    @mock.patch("acp.is_github_user")
+    def test_checkout_without_colon(self, mock_is_user, mock_run):
+        """Test checkout without colon doesn't check GitHub user."""
+        acp.checkout_branch("feature-branch")
+        mock_is_user.assert_not_called()
+        mock_run.assert_called_once_with(["git", "checkout", "feature-branch"])
+
+
+class TestCheckoutCommand:
+    """Test the checkout command in main()."""
+
+    @mock.patch("acp.checkout_branch")
+    def test_checkout_command(self, mock_checkout):
+        """Test checkout command calls checkout_branch."""
+        with mock.patch.object(sys, "argv", ["acp", "checkout", "user:branch"]):
+            acp.main()
+            mock_checkout.assert_called_once_with("user:branch")
+
+    def test_checkout_no_branch(self, capsys):
+        """Test checkout without branch shows error."""
+        with mock.patch.object(sys, "argv", ["acp", "checkout"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Branch name required" in captured.err
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

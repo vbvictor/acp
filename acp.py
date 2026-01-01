@@ -480,13 +480,16 @@ def enable_auto_merge(pr_url, commit_message, merge_method, verbose):
 
 def show_help():
     """Show help message."""
+    print("usage: acp pr <commit message> [pr options]")
+    print("       acp checkout <branch>")
+    print()
+    print("Commands:")
+    print("  pr <message>                Create a PR with staged changes")
     print(
-        "usage: acp pr <commit message> [-b <body>] [-i] [--merge|--auto-merge] [--merge-method <method>]"
+        "  checkout <branch>           Checkout a branch, stripping 'user:' prefix if present"
     )
     print()
-    print("acp - create PRs in one command")
-    print()
-    print("Options:")
+    print("PR Options:")
     print("  -b, --body <text>           Custom PR body message")
     print("  -i, --interactive           Show PR creation URL instead of creating PR")
     print("  -v, --verbose               Show detailed output")
@@ -502,6 +505,37 @@ def show_help():
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
     print('  acp pr "fix: urgent" -b "Closes issue #123" --merge --merge-method rebase')
+
+
+def strip_branch_prefix(branch):
+    """Strip the 'username:' prefix from a branch name.
+
+    GitHub displays fork branches as 'username:branch-name'.
+    This function strips the prefix to get just the branch name.
+    """
+    if ":" in branch:
+        return branch.split(":", 1)[1]
+    return branch
+
+
+def is_github_user(username):
+    result = subprocess.run(
+        ["gh", "api", f"users/{username}"],
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
+def checkout_branch(branch):
+    """Checkout a branch, stripping any 'username:' prefix if needed."""
+    if ":" in branch:
+        prefix, rest = branch.split(":", 1)
+        if is_github_user(prefix):
+            run(["git", "checkout", rest])
+            return
+
+    run(["git", "checkout", branch])
 
 
 def create_pr(
@@ -676,7 +710,7 @@ def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
         prog="acp",
-        usage="acp pr <commit message>",
+        usage="acp <command> [options]",
         description="acp - create PRs in one command",
         add_help=False,
     )
@@ -726,21 +760,29 @@ def main():
         show_help()
         sys.exit(0)
 
-    if args.command != "pr" or not args.message:
-        show_help()
-        sys.exit(1)
-
     try:
-        create_pr(
-            args.message,
-            verbose=args.verbose,
-            body=args.body,
-            interactive=args.interactive,
-            merge=args.merge,
-            auto_merge=args.auto_merge,
-            merge_method=args.merge_method,
-            sync=args.sync,
-        )
+        if args.command == "checkout":
+            if not args.message:
+                print("Error: Branch name required for checkout", file=sys.stderr)
+                sys.exit(1)
+            checkout_branch(args.message)
+        elif args.command == "pr":
+            if not args.message:
+                print("Error: Commit message required for pr", file=sys.stderr)
+                sys.exit(1)
+            create_pr(
+                args.message,
+                verbose=args.verbose,
+                body=args.body,
+                interactive=args.interactive,
+                merge=args.merge,
+                auto_merge=args.auto_merge,
+                merge_method=args.merge_method,
+                sync=args.sync,
+            )
+        else:
+            show_help()
+            sys.exit(1)
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
         sys.exit(130)
