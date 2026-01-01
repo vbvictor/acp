@@ -30,7 +30,7 @@ jobs:
         run: python -m build
 
       - name: Create version-agnostic wheel copy
-        run: cp dist/acp-*.whl dist/acp-latest.whl
+        run: cp dist/acp-*.whl dist/acp-latest-py3-none-any.whl
 
       - name: Extract version from tag
         id: get_version
@@ -46,7 +46,7 @@ jobs:
           body: |
             ### Install directly from GitHub:
             ```bash
-            pip install https://github.com/${{ github.repository }}/releases/latest/download/acp-latest.whl
+            pip install https://github.com/${{ github.repository }}/releases/latest/download/acp-latest-py3-none-any.whl
             ```
           draft: false
           prerelease: false
