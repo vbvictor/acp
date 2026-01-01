@@ -2,7 +2,7 @@
 """Release automation script for acp.
 
 This script automates the release process:
-1. Updates version in pyproject.toml and acp.py
+1. Updates version in pyproject.toml, acp.py, and README.md
 2. Creates a release commit
 3. Pushes directly to main using acp --merge
 4. Creates and pushes a version tag
@@ -78,12 +78,27 @@ def update_acp_py(version):
     print(f'Updated acp.py: __version__ = "{version}"')
 
 
+def update_readme(version):
+    """Update version in README.md installation URLs."""
+    readme_path = Path("README.md")
+    content = readme_path.read_text()
+
+    new_content = re.sub(
+        r"acp-\d+\.\d+\.\d+-py3-none-any\.whl",
+        f"acp-{version}-py3-none-any.whl",
+        content,
+    )
+
+    readme_path.write_text(new_content)
+    print(f"Updated README.md: acp-{version}-py3-none-any.whl")
+
+
 def check_git_status():
     """Check if git working directory is clean."""
     result = run_command("git status --porcelain", check=False)
     if result.stdout.strip():
         lines = result.stdout.strip().split("\n")
-        allowed_files = {"pyproject.toml", "acp.py"}
+        allowed_files = {"pyproject.toml", "acp.py", "README.md"}
         for line in lines:
             filename = line[3:].strip()
             if filename not in allowed_files:
@@ -114,7 +129,7 @@ def check_acp_exists():
 
 def stage_files():
     """Stage the modified files."""
-    run_command("git add pyproject.toml acp.py")
+    run_command("git add pyproject.toml acp.py README.md")
     print("Staged modified files")
 
 
@@ -227,6 +242,7 @@ Uses the local acp.py script automatically.
     print("\nUpdating version files...")
     update_pyproject_toml(new_version)
     update_acp_py(new_version)
+    update_readme(new_version)
 
     print("\nStaging files...")
     stage_files()
