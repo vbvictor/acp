@@ -45,7 +45,7 @@ gh auth login
 Download and install the latest release directly via `pip` or `pipx`:
 
 ```bash
-pip install https://github.com/vbvictor/acp/releases/latest/download/acp-0.6.0-py3-none-any.whl
+pip install https://github.com/vbvictor/acp/releases/latest/download/acp-0.7.0-py3-none-any.whl
 ```
 
 ## Usage
