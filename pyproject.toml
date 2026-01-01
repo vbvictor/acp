@@ -39,4 +39,4 @@ py-modules = ["acp"]
 
 [tool.ruff]
 # Ignore line length rules (E501) - using black for formatting
-ignore = ["E501"]
+lint.ignore = ["E501"]
