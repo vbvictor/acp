@@ -27,6 +27,8 @@ classifiers = [
 dev = [
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
+    "ruff>=0.14.0",
+    "black>=25.0.0",
 ]
 
 [project.scripts]
