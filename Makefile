@@ -25,7 +25,7 @@ test:
 lint:
 	venv/bin/black .
 	venv/bin/ruff check .
-	venv/bin/yamllint -c .yamllint.yaml .github/workflows/
+	venv/bin/yamllint -c .yamllint.yaml .github/
 
 # Clean up test artifacts
 clean:
