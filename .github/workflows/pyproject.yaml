@@ -1,0 +1,31 @@
+name: Validate pyproject config
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-pyproject:
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    name: validate-pyproject
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Python
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install validate-pyproject
+        run: pip install validate-pyproject[all]
+
+      - name: Validate pyproject.toml
+        run: validate-pyproject pyproject.toml
