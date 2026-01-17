@@ -1262,5 +1262,123 @@ class TestCheckoutCommand:
         assert "Branch name required" in captured.err
 
 
+class TestCompletion:
+    """Test shell completion scripts."""
+
+    def test_bash_completion_output(self):
+        """Test bash completion script is generated."""
+        script = acp.get_bash_completion()
+        assert "_acp()" in script
+        assert "complete -F _acp acp" in script
+        assert "pr checkout" in script
+        assert "--merge-method" in script
+
+    def test_zsh_completion_output(self):
+        """Test zsh completion script is generated."""
+        script = acp.get_zsh_completion()
+        assert "#compdef acp" in script
+        assert "pr:Create a pull request" in script
+        assert "--merge-method" in script
+
+    def test_fish_completion_output(self):
+        """Test fish completion script is generated."""
+        script = acp.get_fish_completion()
+        assert "complete -c acp" in script
+        assert "pr" in script
+        assert "merge-method" in script
+
+    def test_completion_command_bash(self, capsys):
+        """Test --completion bash outputs script."""
+        with mock.patch.object(sys, "argv", ["acp", "--completion", "bash"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "_acp()" in captured.out
+        assert "complete -F _acp acp" in captured.out
+
+    def test_completion_command_invalid(self, capsys):
+        """Test --completion with invalid shell."""
+        with mock.patch.object(sys, "argv", ["acp", "--completion", "invalid"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code != 0
+
+
+class TestBashCompletionFunctional:
+    """Functional tests for bash completion - simulates actual TAB completion."""
+
+    @staticmethod
+    def get_bash_completions(comp_words, comp_cword):
+        """Run bash completion and return the COMPREPLY array."""
+        import subprocess
+
+        script = acp.get_bash_completion()
+        # Build the test script
+        words_str = " ".join(f'"{w}"' for w in comp_words)
+        test_script = f"""
+{script}
+COMP_WORDS=({words_str})
+COMP_CWORD={comp_cword}
+_acp
+printf '%s\\n' "${{COMPREPLY[@]}}"
+"""
+        result = subprocess.run(
+            ["bash", "-c", test_script],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            pytest.fail(f"Bash completion failed: {result.stderr}")
+        return result.stdout.strip().split("\n") if result.stdout.strip() else []
+
+    def test_command_completion(self):
+        """Test 'acp <TAB>' completes to commands."""
+        completions = self.get_bash_completions(["acp", ""], 1)
+        assert "pr" in completions
+        assert "checkout" in completions
+
+    def test_option_completion(self):
+        """Test 'acp pr --<TAB>' completes to options."""
+        completions = self.get_bash_completions(["acp", "pr", "--"], 2)
+        assert "--merge" in completions
+        assert "--verbose" in completions
+        assert "--auto-merge" in completions
+        assert "--sync" in completions
+
+    def test_merge_method_values(self):
+        """Test 'acp pr --merge-method <TAB>' completes to merge methods."""
+        completions = self.get_bash_completions(["acp", "pr", "--merge-method", ""], 3)
+        assert "squash" in completions
+        assert "merge" in completions
+        assert "rebase" in completions
+
+    def test_completion_shell_values(self):
+        """Test 'acp --completion <TAB>' completes to shell names."""
+        completions = self.get_bash_completions(["acp", "--completion", ""], 2)
+        assert "bash" in completions
+        assert "zsh" in completions
+        assert "fish" in completions
+
+    def test_partial_option_completion(self):
+        """Test 'acp pr --mer<TAB>' completes to matching options."""
+        completions = self.get_bash_completions(["acp", "pr", "--mer"], 2)
+        assert "--merge" in completions
+        assert "--merge-method" in completions
+
+    def test_partial_command_completion(self):
+        """Test 'acp ch<TAB>' completes to checkout."""
+        completions = self.get_bash_completions(["acp", "ch"], 1)
+        assert "checkout" in completions
+
+    def test_short_option_completion(self):
+        """Test 'acp pr -<TAB>' includes short options."""
+        completions = self.get_bash_completions(["acp", "pr", "-"], 2)
+        assert "-v" in completions
+        assert "-b" in completions
+        assert "-s" in completions
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
