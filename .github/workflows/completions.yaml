@@ -1,0 +1,25 @@
+name: Validate completions
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-completions:
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    name: validate-shell-completions
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+
+      - name: Build and run completion tests
+        run: |
+          docker build -t acp-completions-test -f tests/completions/Dockerfile .
+          docker run --rm acp-completions-test
