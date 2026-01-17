@@ -1,0 +1,29 @@
+name: Validate GitHub Actions
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    name: actionlint
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+# yamllint disable rule:line-length
+      - name: Install actionlint
+        run: |
+          curl -sSL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz | tar -xz
+          sudo mv actionlint /usr/local/bin/
+
+      - name: Check workflow files
+        run: actionlint -color

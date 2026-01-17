@@ -25,7 +25,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install validate-pyproject
-        run: pip install validate-pyproject[all]
+        run: pip install "validate-pyproject[all]"
 
       - name: Validate pyproject.toml
         run: validate-pyproject pyproject.toml
