@@ -41,9 +41,14 @@ jobs:
             dist/*.tar.gz
           generate_release_notes: true
           body: |
-            ### Install directly from GitHub:
+            ### Install from PyPI:
             ```bash
-            pip install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/acp-${{ steps.get_version.outputs.VERSION }}-py3-none-any.whl
+            pip install acp-gh
+            ```
+
+            ### Or install directly from GitHub:
+            ```bash
+            pip install https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/acp_gh-${{ steps.get_version.outputs.VERSION }}-py3-none-any.whl
             ```
           draft: false
           prerelease: false

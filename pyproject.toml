@@ -3,7 +3,7 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "acp"
+name = "acp-gh"
 version = "0.7.3"
 description = "Automatic Commit Pusher (acp)- CLI utility for automating pull request creation"
 readme = "README.md"
@@ -30,6 +30,8 @@ dev = [
     "ruff>=0.14.0",
     "black>=25.0.0",
     "yamllint>=1.35.0",
+    "build>=1.0.0",
+    "twine>=6.0.0",
 ]
 
 [project.scripts]

@@ -42,10 +42,16 @@ Authenticate GitHub CLI (if you haven't already):
 gh auth login
 ```
 
-Download and install the latest release directly via `pip` or `pipx`:
+Install from PyPI via `pip` or `pipx`:
 
 ```bash
-pip install https://github.com/vbvictor/acp/releases/latest/download/acp-0.7.3-py3-none-any.whl
+pip install acp-gh
+```
+
+Or install the latest release directly from GitHub via `pip` or `pipx`:
+
+```bash
+pip install https://github.com/vbvictor/acp/releases/latest/download/acp_gh-0.7.3-py3-none-any.whl
 ```
 
 ## Usage

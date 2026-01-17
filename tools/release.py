@@ -84,13 +84,13 @@ def update_readme(version):
     content = readme_path.read_text()
 
     new_content = re.sub(
-        r"acp-\d+\.\d+\.\d+-py3-none-any\.whl",
-        f"acp-{version}-py3-none-any.whl",
+        r"acp_gh-\d+\.\d+\.\d+-py3-none-any\.whl",
+        f"acp_gh-{version}-py3-none-any.whl",
         content,
     )
 
     readme_path.write_text(new_content)
-    print(f"Updated README.md: acp-{version}-py3-none-any.whl")
+    print(f"Updated README.md: acp_gh-{version}-py3-none-any.whl")
 
 
 def check_git_status():
