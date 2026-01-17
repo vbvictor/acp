@@ -51,7 +51,7 @@ pip install acp-gh
 Or install the latest release directly from GitHub via `pip` or `pipx`:
 
 ```bash
-pip install https://github.com/vbvictor/acp/releases/latest/download/acp_gh-0.7.3-py3-none-any.whl
+pip install https://github.com/vbvictor/acp/releases/latest/download/acp_gh-0.7.4-py3-none-any.whl
 ```
 
 ## Usage
