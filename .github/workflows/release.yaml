@@ -5,10 +5,14 @@ on:
     tags:
       - 'v*'  # Trigger on version tags like v0.3.0, v1.0.0, etc.
 
+permissions: {}  # Minimal permissions at workflow level; jobs declare their own
+
 # yamllint disable rule:line-length
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout code
         uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
