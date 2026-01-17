@@ -9,7 +9,7 @@ import random
 import subprocess
 import sys
 
-__version__ = "0.7.4"
+__version__ = "0.8.0"
 
 
 def run(cmd, quiet=False):
