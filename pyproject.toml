@@ -23,6 +23,11 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
 ]
 
+[project.urls]
+Homepage = "https://github.com/vbvictor/acp"
+Repository = "https://github.com/vbvictor/acp"
+Issues = "https://github.com/vbvictor/acp/issues"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
