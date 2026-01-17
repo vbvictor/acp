@@ -38,5 +38,5 @@ jobs:
       - name: Generate coverage summary
         if: matrix.python-version == '3.13'
         run: |
-          echo "## Test Coverage Report" >> $GITHUB_STEP_SUMMARY
-          pytest test_acp.py --cov=acp --cov-report=term-missing | tail -n +6 >> $GITHUB_STEP_SUMMARY
+          echo "## Test Coverage Report" >> "$GITHUB_STEP_SUMMARY"
+          pytest test_acp.py --cov=acp --cov-report=term-missing | tail -n +6 >> "$GITHUB_STEP_SUMMARY"
