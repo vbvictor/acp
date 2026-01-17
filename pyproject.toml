@@ -5,28 +5,46 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "acp-gh"
 version = "0.8.0"
-description = "Automatic Commit Pusher (acp)- CLI utility for automating pull request creation"
+description = "Automatic Commit Pusher (acp) - CLI tool to create GitHub PRs from staged changes in a single command"
 readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "GPLv2"}
 authors = [
-    {name = "Victor", email = "bar.victor.2002@gmail.com"}
+    {name = "Victor Baranov", email = "bar.victor.2002@gmail.com"}
+]
+keywords = [
+    "git",
+    "github",
+    "gh",
+    "github-cli",
+    "pull-request",
+    "pr",
+    "cli",
+    "automation",
+    "developer-tools",
+    "productivity",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Environment :: Console",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Version Control :: Git",
+    "Topic :: Utilities",
 ]
 
 [project.urls]
 Homepage = "https://github.com/vbvictor/acp"
 Repository = "https://github.com/vbvictor/acp"
 Issues = "https://github.com/vbvictor/acp/issues"
+Changelog = "https://github.com/vbvictor/acp/releases"
 
 [project.optional-dependencies]
 dev = [
