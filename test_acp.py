@@ -718,6 +718,82 @@ class TestCreatePR:
         assert "auto-merge is not enabled" in captured.err
 
 
+class TestAddFlag:
+    """Test the --add flag functionality."""
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_add_flag_calls_git_add(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
+        """Test that --add flag calls 'git add .' before checking staged changes."""
+        mock_run_check.side_effect = [False, True]  # Has staged changes
+
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            None,  # git add .
+            "main",  # get current branch
+            "testuser",  # get gh username
+            "git@github.com:user/repo.git",  # git remote get-url origin
+            None,  # git checkout -b
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", add=True)
+
+        # Verify git add . was called first
+        calls = mock_run.call_args_list
+        assert calls[0] == mock.call(["git", "add", "."], quiet=True)
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_add_flag_verbose_output(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess, capsys
+    ):
+        """Test that --add flag shows verbose output when verbose=True."""
+        mock_run_check.side_effect = [False, True]  # Has staged changes
+
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            None,  # git add .
+            "main",  # get current branch
+            "testuser",  # get gh username
+            "git@github.com:user/repo.git",  # git remote get-url origin
+            None,  # git checkout -b
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr("test commit", verbose=True, body="", add=True)
+
+        captured = capsys.readouterr()
+        assert "Adding all changes with 'git add .'" in captured.out
+
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_add_flag_not_called_when_false(self, mock_run_check, mock_run):
+        """Test that git add . is not called when add=False."""
+        mock_run.return_value = "main"
+        mock_run_check.return_value = True  # No staged changes
+
+        with pytest.raises(SystemExit):
+            acp.create_pr("test commit", verbose=False, body="", add=False)
+
+        # Verify git add . was NOT called
+        calls = mock_run.call_args_list
+        git_add_calls = [
+            c for c in calls if c == mock.call(["git", "add", "."], quiet=True)
+        ]
+        assert len(git_add_calls) == 0
+
+
 class TestMain:
     """Test the main() function."""
 
@@ -766,6 +842,7 @@ class TestMain:
                 auto_merge=False,
                 merge_method="squash",
                 sync=False,
+                add=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -782,6 +859,7 @@ class TestMain:
                 auto_merge=False,
                 merge_method="squash",
                 sync=False,
+                add=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -798,6 +876,7 @@ class TestMain:
                 auto_merge=False,
                 merge_method="squash",
                 sync=False,
+                add=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -814,6 +893,7 @@ class TestMain:
                 auto_merge=True,
                 merge_method="squash",
                 sync=False,
+                add=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -832,6 +912,41 @@ class TestMain:
                 auto_merge=False,
                 merge_method="rebase",
                 sync=False,
+                add=False,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_add_flag(self, mock_create_pr):
+        """Test --add flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "--add"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+                merge_method="squash",
+                sync=False,
+                add=True,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_add_flag_short(self, mock_create_pr):
+        """Test -a flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "-a"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+                merge_method="squash",
+                sync=False,
+                add=True,
             )
 
     @mock.patch("subprocess.run")
