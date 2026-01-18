@@ -490,6 +490,7 @@ def show_help():
     )
     print()
     print("PR Options:")
+    print("  -a, --add                   Run 'git add .' before committing changes")
     print("  -b, --body <text>           Custom PR body message")
     print("  -i, --interactive           Show PR creation URL instead of creating PR")
     print("  -v, --verbose               Show detailed output")
@@ -547,10 +548,17 @@ def create_pr(
     auto_merge=False,
     merge_method="squash",
     sync=False,
+    add=False,
 ):
     """Create a PR with staged changes."""
     # Validate inputs
     validate_merge_options(interactive, merge, auto_merge, merge_method)
+
+    # Run git add . if requested
+    if add:
+        if verbose:
+            print("Adding all changes with 'git add .'...")
+        run(["git", "add", "."], quiet=True)
 
     # Get current branch
     original_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
@@ -747,6 +755,12 @@ def main():
         action="store_true",
         help="Sync current branch with remote after merge",
     )
+    parser.add_argument(
+        "-a",
+        "--add",
+        action="store_true",
+        help="Run 'git add .' before committing changes",
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
@@ -779,6 +793,7 @@ def main():
                 auto_merge=args.auto_merge,
                 merge_method=args.merge_method,
                 sync=args.sync,
+                add=args.add,
             )
         else:
             show_help()
