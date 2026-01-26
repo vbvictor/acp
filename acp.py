@@ -12,6 +12,132 @@ import sys
 __version__ = "1.1.0"
 
 
+def get_bash_completion():
+    """Generate bash completion script."""
+    return '''\
+_acp() {
+    local cur prev commands opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    commands="pr checkout"
+    opts="-v --verbose -b --body -i --interactive --merge --auto-merge --merge-method -s --sync -h --help --version --completion"
+
+    if [[ ${COMP_CWORD} -eq 1 ]]; then
+        if [[ ${cur} == -* ]]; then
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        else
+            COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
+        fi
+        return 0
+    fi
+
+    case "${prev}" in
+        --merge-method)
+            COMPREPLY=( $(compgen -W "merge squash rebase" -- "${cur}") )
+            return 0
+            ;;
+        --completion)
+            COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") )
+            return 0
+            ;;
+        -b|--body)
+            return 0
+            ;;
+    esac
+
+    if [[ ${cur} == -* ]]; then
+        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    fi
+}
+
+complete -F _acp acp
+'''
+
+
+def get_zsh_completion():
+    """Generate zsh completion script."""
+    return '''\
+#compdef acp
+
+_acp() {
+    local -a commands options merge_methods shells
+
+    commands=(
+        'pr:Create a pull request from staged changes'
+        'checkout:Checkout a branch'
+    )
+
+    options=(
+        '-v[Show detailed output]'
+        '--verbose[Show detailed output]'
+        '-b[Custom PR body message]:body:'
+        '--body[Custom PR body message]:body:'
+        '-i[Show PR creation URL]'
+        '--interactive[Show PR creation URL]'
+        '--merge[Merge PR immediately after creation]'
+        '--auto-merge[Enable auto-merge when checks pass]'
+        '--merge-method[Merge method]:method:(merge squash rebase)'
+        '-s[Sync current branch with remote after merge]'
+        '--sync[Sync current branch with remote after merge]'
+        '-h[Show help]'
+        '--help[Show help]'
+        '--version[Show version]'
+        '--completion[Output shell completion script]:shell:(bash zsh fish)'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe -t commands 'acp commands' commands
+        _describe -t options 'options' options
+    else
+        _describe -t options 'options' options
+    fi
+}
+
+_acp "$@"
+'''
+
+
+def get_fish_completion():
+    """Generate fish completion script."""
+    return '''\
+# Fish completion for acp
+
+# Disable file completion by default
+complete -c acp -f
+
+# Commands
+complete -c acp -n "__fish_use_subcommand" -a "pr" -d "Create a pull request from staged changes"
+complete -c acp -n "__fish_use_subcommand" -a "checkout" -d "Checkout a branch"
+
+# Options
+complete -c acp -s v -l verbose -d "Show detailed output"
+complete -c acp -s b -l body -d "Custom PR body message" -r
+complete -c acp -s i -l interactive -d "Show PR creation URL"
+complete -c acp -l merge -d "Merge PR immediately after creation"
+complete -c acp -l auto-merge -d "Enable auto-merge when checks pass"
+complete -c acp -l merge-method -d "Merge method" -r -a "merge squash rebase"
+complete -c acp -s s -l sync -d "Sync current branch with remote after merge"
+complete -c acp -s h -l help -d "Show help"
+complete -c acp -l version -d "Show version"
+complete -c acp -l completion -d "Output shell completion script" -r -a "bash zsh fish"
+'''
+
+
+def print_completion(shell):
+    """Print completion script for the specified shell."""
+    completions = {
+        "bash": get_bash_completion,
+        "zsh": get_zsh_completion,
+        "fish": get_fish_completion,
+    }
+    if shell not in completions:
+        print(f"Error: Unknown shell '{shell}'", file=sys.stderr)
+        print("Supported shells: bash, zsh, fish", file=sys.stderr)
+        sys.exit(1)
+    print(completions[shell]())
+
+
 def run(cmd, quiet=False):
     """Run a command and return output."""
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -763,8 +889,18 @@ def main():
     )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--completion",
+        type=str,
+        choices=["bash", "zsh", "fish"],
+        help="Output shell completion script",
+    )
 
     args = parser.parse_args()
+
+    if args.completion:
+        print_completion(args.completion)
+        sys.exit(0)
 
     if args.version:
         print(f"acp version {__version__}")
