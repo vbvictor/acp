@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==80.10.2", "wheel==0.46.3"]
+requires = ["setuptools==82.0.0", "wheel==0.46.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -50,7 +50,7 @@ Changelog = "https://github.com/vbvictor/acp/releases"
 dev = [
     "pytest==8.4.2",
     "pytest-cov==7.0.0",
-    "ruff==0.14.14",
+    "ruff==0.15.0",
     "black==25.11.0",
     "yamllint==1.37.1",
     "build==1.4.0",
