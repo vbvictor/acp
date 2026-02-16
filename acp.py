@@ -206,7 +206,14 @@ def build_compare_url(upstream_repo, fork_repo, temp_branch, is_fork):
 
 
 def create_github_pr(
-    upstream_repo, fork_repo, temp_branch, commit_message, body, is_fork, verbose
+    upstream_repo,
+    fork_repo,
+    temp_branch,
+    commit_message,
+    body,
+    is_fork,
+    verbose,
+    reviewers=None,
 ):
     """Create a GitHub PR using gh CLI.
 
@@ -233,6 +240,10 @@ def create_github_pr(
         gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
     else:
         gh_cmd.extend(["--head", temp_branch])
+
+    # Add reviewers if specified
+    if reviewers:
+        gh_cmd.extend(["--reviewer", reviewers])
 
     pr_url = run(gh_cmd, quiet=True)
 
@@ -493,6 +504,7 @@ def show_help():
     print("  -a, --add                   Run 'git add .' before committing changes")
     print("  -b, --body <text>           Custom PR body message")
     print("  -i, --interactive           Show PR creation URL instead of creating PR")
+    print("  -r, --reviewers <users>     Comma-separated list of GitHub usernames")
     print("  -v, --verbose               Show detailed output")
     print("  --merge                     Merge PR immediately after creation")
     print("  --auto-merge                Enable GitHub auto-merge after PR creation")
@@ -506,6 +518,7 @@ def show_help():
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
     print('  acp pr "fix: urgent" -b "Closes issue #123" --merge --merge-method rebase')
+    print('  acp pr "feat: new feature" -r vbvictor,octodad')
 
 
 def strip_branch_prefix(branch):
@@ -549,6 +562,7 @@ def create_pr(
     merge_method="squash",
     sync=False,
     add=False,
+    reviewers=None,
 ):
     """Create a PR with staged changes."""
     # Validate inputs
@@ -657,6 +671,7 @@ def create_pr(
                 body,
                 is_fork,
                 verbose,
+                reviewers,
             )
 
             # Handle merge options
@@ -761,6 +776,13 @@ def main():
         action="store_true",
         help="Run 'git add .' before committing changes",
     )
+    parser.add_argument(
+        "-r",
+        "--reviewers",
+        type=str,
+        default=None,
+        help="Comma-separated list of GitHub usernames to request reviews from",
+    )
     parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
@@ -794,6 +816,7 @@ def main():
                 merge_method=args.merge_method,
                 sync=args.sync,
                 add=args.add,
+                reviewers=args.reviewers,
             )
         else:
             show_help()
