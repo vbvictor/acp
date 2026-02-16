@@ -717,6 +717,71 @@ class TestCreatePR:
         assert "Failed to enable auto-merge" in captured.err
         assert "auto-merge is not enabled" in captured.err
 
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_with_reviewers(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
+        """Test PR creation with reviewers."""
+        mock_run_check.side_effect = [False, True]
+
+        # No upstream remote
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr(
+            "test commit", verbose=False, body="", reviewers="vbvictor,octodad"
+        )
+
+        # Verify PR was created with reviewers
+        calls = mock_run.call_args_list
+        pr_create_call = calls[5]  # gh pr create call
+        assert "--reviewer" in str(pr_create_call)
+        assert "vbvictor,octodad" in str(pr_create_call)
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_without_reviewers(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
+        """Test PR creation without reviewers (default behavior)."""
+        mock_run_check.side_effect = [False, True]
+
+        # No upstream remote
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            "main",  # current branch
+            "testuser",  # gh username
+            "git@github.com:user/repo.git",  # origin
+            None,  # git checkout -b
+            # git commit now uses run_interactive, not run
+            # git push now uses run_interactive, not run
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="")
+
+        # Verify PR was created without reviewers
+        calls = mock_run.call_args_list
+        pr_create_call = calls[5]  # gh pr create call
+        assert "--reviewer" not in str(pr_create_call)
+
 
 class TestAddFlag:
     """Test the --add flag functionality."""
@@ -843,6 +908,7 @@ class TestMain:
                 merge_method="squash",
                 sync=False,
                 add=False,
+                reviewers=None,
             )
 
     @mock.patch("acp.create_pr")
@@ -860,6 +926,7 @@ class TestMain:
                 merge_method="squash",
                 sync=False,
                 add=False,
+                reviewers=None,
             )
 
     @mock.patch("acp.create_pr")
@@ -877,6 +944,7 @@ class TestMain:
                 merge_method="squash",
                 sync=False,
                 add=False,
+                reviewers=None,
             )
 
     @mock.patch("acp.create_pr")
@@ -894,6 +962,7 @@ class TestMain:
                 merge_method="squash",
                 sync=False,
                 add=False,
+                reviewers=None,
             )
 
     @mock.patch("acp.create_pr")
@@ -913,6 +982,7 @@ class TestMain:
                 merge_method="rebase",
                 sync=False,
                 add=False,
+                reviewers=None,
             )
 
     @mock.patch("acp.create_pr")
@@ -930,6 +1000,7 @@ class TestMain:
                 merge_method="squash",
                 sync=False,
                 add=True,
+                reviewers=None,
             )
 
     @mock.patch("acp.create_pr")
@@ -947,6 +1018,45 @@ class TestMain:
                 merge_method="squash",
                 sync=False,
                 add=True,
+                reviewers=None,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_reviewers_flag(self, mock_create_pr):
+        """Test --reviewers flag is passed."""
+        with mock.patch.object(
+            sys, "argv", ["acp", "pr", "test", "--reviewers", "vbvictor,octodad"]
+        ):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+                merge_method="squash",
+                sync=False,
+                add=False,
+                reviewers="vbvictor,octodad",
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_reviewers_flag_short(self, mock_create_pr):
+        """Test -r flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "-r", "user1"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+                merge_method="squash",
+                sync=False,
+                add=False,
+                reviewers="user1",
             )
 
     @mock.patch("subprocess.run")
