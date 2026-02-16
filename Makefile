@@ -1,4 +1,4 @@
-.PHONY: help activate test lint clean
+.PHONY: help activate test lint install clean
 
 # Default target
 help:
@@ -8,6 +8,7 @@ help:
 	@echo "  make activate - Create venv and install dev dependencies"
 	@echo "  make test     - Run unit tests"
 	@echo "  make lint     - Run linters/formatters"
+	@echo "  make install  - Install acp with pipx from current branch"
 	@echo "  make clean    - Clean up test artifacts"
 
 # Setup dev environment
@@ -26,6 +27,9 @@ lint:
 	venv/bin/black .
 	venv/bin/ruff check .
 	venv/bin/yamllint -c .yamllint.yaml .github/
+
+install:
+	pipx install . --force
 
 # Clean up test artifacts
 clean:
