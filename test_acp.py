@@ -1487,5 +1487,68 @@ class TestCheckoutCommand:
         assert "Branch name required" in captured.err
 
 
+class TestCompletion:
+    """Test shell completion scripts."""
+
+    def test_completion_command_bash(self, capsys):
+        """Test 'acp completions bash' outputs script."""
+        with mock.patch.object(sys, "argv", ["acp", "completions", "bash"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "_acp()" in captured.out
+        assert "complete -F _acp acp" in captured.out
+
+    def test_completion_command_zsh(self, capsys):
+        """Test 'acp completions zsh' outputs script."""
+        with mock.patch.object(sys, "argv", ["acp", "completions", "zsh"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "#compdef acp" in captured.out
+        assert "_arguments" in captured.out
+
+    def test_completion_command_fish(self, capsys):
+        """Test 'acp completions fish' outputs script."""
+        with mock.patch.object(sys, "argv", ["acp", "completions", "fish"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "complete -c acp" in captured.out
+
+    def test_completion_command_invalid(self, capsys):
+        """Test 'acp completions invalid' with invalid shell."""
+        with mock.patch.object(sys, "argv", ["acp", "completions", "invalid"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code != 0
+
+    def test_completion_command_no_shell(self, capsys):
+        """Test 'acp completions' without shell name."""
+        with mock.patch.object(sys, "argv", ["acp", "completions"]):
+            with pytest.raises(SystemExit) as exc:
+                acp.main()
+            assert exc.value.code != 0
+
+        captured = capsys.readouterr()
+        assert "Shell name required" in captured.err
+
+    def test_print_completion_invalid_shell(self, capsys):
+        """Test print_completion() directly with invalid shell."""
+        with pytest.raises(SystemExit) as exc:
+            acp.print_completion("powershell")
+        assert exc.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Unknown shell" in captured.err
+        assert "Supported shells" in captured.err
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

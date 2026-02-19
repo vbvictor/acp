@@ -1,0 +1,28 @@
+name: Validate completions
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate-completions:
+    timeout-minutes: 5
+    runs-on: ubuntu-24.04
+    name: validate-shell-completions
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends zsh fish
+
+      - name: Run completion tests
+        run: bash tests/completions/test_completions.sh
