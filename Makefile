@@ -1,4 +1,4 @@
-.PHONY: help activate test lint install clean
+.PHONY: help activate test test-completions lint install clean
 
 # Default target
 help:
@@ -6,7 +6,8 @@ help:
 	@echo ""
 	@echo "Available targets:"
 	@echo "  make activate - Create venv and install dev dependencies"
-	@echo "  make test     - Run unit tests"
+	@echo "  make test              - Run unit tests"
+	@echo "  make test-completions  - Run shell completion tests in Docker"
 	@echo "  make lint     - Run linters/formatters"
 	@echo "  make install  - Install acp with pipx from current branch"
 	@echo "  make clean    - Clean up test artifacts"
@@ -21,6 +22,11 @@ activate:
 # Unit tests
 test:
 	venv/bin/pytest test_acp.py -v
+
+# Shell completion tests (Docker)
+test-completions:
+	docker build -t acp-completions-test -f tests/completions/Dockerfile .
+	docker run --rm acp-completions-test
 
 # Format and lint code
 lint:

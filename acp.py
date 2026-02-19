@@ -12,6 +12,155 @@ import sys
 __version__ = "1.1.0"
 
 
+def get_bash_completion():
+    """Generate bash completion script."""
+    return """\
+_acp() {
+    local cur prev commands opts
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev="${COMP_WORDS[COMP_CWORD-1]}"
+    commands="pr checkout completions"
+    opts="-v --verbose -b --body -i --interactive --merge --auto-merge --merge-method -s --sync -a --add -r --reviewers -h --help --version"
+
+    if [[ ${COMP_CWORD} -eq 1 ]]; then
+        if [[ ${cur} == -* ]]; then
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+        else
+            COMPREPLY=( $(compgen -W "${commands}" -- "${cur}") )
+        fi
+        return 0
+    fi
+
+    case "${prev}" in
+        --merge-method)
+            COMPREPLY=( $(compgen -W "merge squash rebase" -- "${cur}") )
+            return 0
+            ;;
+        completions)
+            COMPREPLY=( $(compgen -W "bash zsh fish" -- "${cur}") )
+            return 0
+            ;;
+        -b|--body|-r|--reviewers)
+            return 0
+            ;;
+    esac
+
+    local subcmd="${COMP_WORDS[1]}"
+    if [[ ${cur} == -* ]] || [[ "${subcmd}" == "pr" && -z "${cur}" ]]; then
+        COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+    fi
+}
+
+complete -F _acp acp
+"""
+
+
+def get_zsh_completion():
+    """Generate zsh completion script."""
+    return """\
+#compdef acp
+
+_acp() {
+    local curcontext="$curcontext" ret=1
+
+    _arguments -C \\
+        '1:command:->command' \\
+        '*::arg:->args' && ret=0
+
+    case $state in
+        command)
+            local -a commands
+            commands=(
+                'pr:Create a pull request from staged changes'
+                'checkout:Checkout a branch'
+                'completions:Output shell completion script'
+            )
+            _describe -t commands 'acp commands' commands && ret=0
+            ;;
+        args)
+            case ${words[1]} in
+                pr)
+                    _arguments \\
+                        '1:commit message:' \\
+                        '-v[Show detailed output]' \\
+                        '--verbose[Show detailed output]' \\
+                        '-b[Custom PR body message]:body:' \\
+                        '--body[Custom PR body message]:body:' \\
+                        '-i[Show PR creation URL]' \\
+                        '--interactive[Show PR creation URL]' \\
+                        '--merge[Merge PR immediately after creation]' \\
+                        '--auto-merge[Enable auto-merge when checks pass]' \\
+                        '--merge-method[Merge method]:method:(merge squash rebase)' \\
+                        '-s[Sync current branch with remote after merge]' \\
+                        '--sync[Sync current branch with remote after merge]' \\
+                        '-a[Run git add . before committing]' \\
+                        '--add[Run git add . before committing]' \\
+                        '-r[Request reviewers]:reviewers:' \\
+                        '--reviewers[Request reviewers]:reviewers:' \\
+                        '-h[Show help]' \\
+                        '--help[Show help]' && ret=0
+                    ;;
+                checkout)
+                    _arguments '1:branch name:' && ret=0
+                    ;;
+                completions)
+                    _arguments '1:shell:(bash zsh fish)' && ret=0
+                    ;;
+            esac
+            ;;
+    esac
+
+    return ret
+}
+
+_acp "$@"
+"""
+
+
+def get_fish_completion():
+    """Generate fish completion script."""
+    return """\
+# Fish completion for acp
+
+# Disable file completion by default
+complete -c acp -f
+
+# Commands
+complete -c acp -n "__fish_use_subcommand" -a "pr" -d "Create a pull request from staged changes"
+complete -c acp -n "__fish_use_subcommand" -a "checkout" -d "Checkout a branch"
+complete -c acp -n "__fish_use_subcommand" -a "completions" -d "Output shell completion script"
+complete -c acp -n "__fish_seen_subcommand_from completions" -a "bash zsh fish"
+
+# Options
+complete -c acp -s v -l verbose -d "Show detailed output"
+complete -c acp -s b -l body -d "Custom PR body message" -r
+complete -c acp -s i -l interactive -d "Show PR creation URL"
+complete -c acp -l merge -d "Merge PR immediately after creation"
+complete -c acp -l auto-merge -d "Enable auto-merge when checks pass"
+complete -c acp -l merge-method -d "Merge method" -r -a "merge squash rebase"
+complete -c acp -s s -l sync -d "Sync current branch with remote after merge"
+complete -c acp -s a -l add -d "Run git add . before committing"
+complete -c acp -s r -l reviewers -d "Comma-separated list of reviewers" -r
+complete -c acp -s h -l help -d "Show help"
+complete -c acp -l version -d "Show version"
+"""
+
+
+def print_completion(shell):
+    """Print completion script for the specified shell."""
+    completions = {
+        "bash": get_bash_completion,
+        "zsh": get_zsh_completion,
+        "fish": get_fish_completion,
+    }
+    if shell not in completions:
+        print(f"Error: Unknown shell '{shell}'", file=sys.stderr)
+        print("Supported shells: bash, zsh, fish", file=sys.stderr)
+        sys.exit(1)
+    print(completions[shell]())
+
+
 def run(cmd, quiet=False):
     """Run a command and return output."""
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -493,11 +642,15 @@ def show_help():
     """Show help message."""
     print("usage: acp pr <commit message> [pr options]")
     print("       acp checkout <branch>")
+    print("       acp completions <shell>")
     print()
     print("Commands:")
     print("  pr <message>                Create a PR with staged changes")
     print(
         "  checkout <branch>           Checkout a branch, stripping 'user:' prefix if present"
+    )
+    print(
+        "  completions <shell>         Output shell completion script (bash, zsh, fish)"
     )
     print()
     print("PR Options:")
@@ -514,6 +667,12 @@ def show_help():
     print("  -s, --sync                  Sync current branch with remote after --merge")
     print("  --version                   Show version number")
     print("  -h, --help                  Show this help message")
+    print()
+    print("Shell Completions:")
+    print("  Bash:  echo 'eval \"$(acp completions bash)\"' >> ~/.bashrc")
+    print("  Zsh:   echo 'eval \"$(acp completions zsh)\"' >> ~/.zshrc")
+    print("  Fish:  acp completions fish | source")
+    print("         Or save to: ~/.config/fish/completions/acp.fish")
     print()
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
@@ -787,6 +946,15 @@ def main():
     parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
 
     args = parser.parse_args()
+
+    if args.command == "completions":
+        # args.message is the second positional arg (commit message for pr, branch for checkout)
+        shell = args.message
+        if not shell:
+            print("Error: Shell name required (bash, zsh, fish)", file=sys.stderr)
+            sys.exit(1)
+        print_completion(shell)
+        sys.exit(0)
 
     if args.version:
         print(f"acp version {__version__}")
