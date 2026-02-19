@@ -1,0 +1,15 @@
+changelog:
+  exclude:
+    authors:
+      - dependabot
+  categories:
+    - title: New Features
+      labels:
+        - feat
+        - enhancement
+        - feature
+    - title: Bug Fixes
+      labels:
+        - fix
+        - bug
+        - bugfix

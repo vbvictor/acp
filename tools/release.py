@@ -16,9 +16,12 @@ Example:
 """
 
 import argparse
+import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 
@@ -194,6 +197,131 @@ def create_and_push_tag(version):
     print(f"Pushed tag {tag_name}")
 
 
+def get_previous_tag(current_tag):
+    """Get the tag immediately before current_tag."""
+    result = run_command(
+        f"git describe --abbrev=0 --tags {current_tag}^",
+        check=False,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
+def generate_filtered_changelog(version):
+    """Generate changelog with only feat: and fix: commits since the previous tag."""
+    current_tag = f"v{version}"
+    previous_tag = get_previous_tag(current_tag)
+
+    if previous_tag:
+        range_spec = f"{previous_tag}..{current_tag}"
+        print(f"Changelog range: {previous_tag} → {current_tag}")
+    else:
+        range_spec = current_tag
+        print(f"Changelog range: all commits up to {current_tag}")
+
+    result = run_command(
+        f"git log {range_spec} --pretty=format:%s",
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return None
+
+    commits = [c.strip() for c in result.stdout.strip().split("\n") if c.strip()]
+    features = [c for c in commits if re.match(r"^feat(?:\([^)]*\))?:", c)]
+    fixes = [c for c in commits if re.match(r"^fix(?:\([^)]*\))?:", c)]
+
+    parts = []
+    if features:
+        parts.append("## What's New")
+        for feat in features:
+            desc = re.sub(r"^feat(?:\([^)]*\))?:\s*", "", feat)
+            parts.append(f"- {desc}")
+        parts.append("")
+
+    if fixes:
+        parts.append("## Bug Fixes")
+        for fix in fixes:
+            desc = re.sub(r"^fix(?:\([^)]*\))?:\s*", "", fix)
+            parts.append(f"- {desc}")
+        parts.append("")
+
+    return "\n".join(parts) if parts else None
+
+
+def update_release_with_filtered_notes(version):
+    """Wait for the GitHub release to be created and update it with filtered changelog."""
+    tag_name = f"v{version}"
+
+    result = run_command(
+        "gh repo view --json nameWithOwner -q .nameWithOwner",
+        check=False,
+    )
+    repository = result.stdout.strip() if result.returncode == 0 else ""
+
+    print("\nGenerating filtered changelog (feat: and fix: commits only)...")
+    changelog = generate_filtered_changelog(version)
+
+    install_block = f"### Install from PyPI:\n```bash\npip install acp-gh\n```"
+    if repository:
+        install_block += (
+            f"\n\n### Or install directly from GitHub:\n"
+            f"```bash\n"
+            f"pip install https://github.com/{repository}/releases/download/"
+            f"{tag_name}/acp_gh-{version}-py3-none-any.whl\n"
+            f"```"
+        )
+
+    full_notes = install_block + "\n\n" + (
+        changelog if changelog else "No new features or bug fixes in this release.\n"
+    )
+
+    print(f"\nWaiting for GitHub release {tag_name} to be created by Actions...")
+    max_wait = 300  # 5 minutes
+    elapsed = 0
+    release_found = False
+    while elapsed < max_wait:
+        result = run_command(f"gh release view {tag_name}", check=False)
+        if result.returncode == 0:
+            release_found = True
+            print(f"Release {tag_name} found.")
+            break
+        time.sleep(15)
+        elapsed += 15
+        print(f"  Still waiting... ({elapsed}s / {max_wait}s)")
+
+    if not release_found:
+        print(
+            f"\nWarning: Release {tag_name} not found after {max_wait}s.",
+            file=sys.stderr,
+        )
+        print("You can manually update it with the following notes:", file=sys.stderr)
+        print("-" * 40)
+        print(full_notes)
+        return False
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False) as f:
+        f.write(full_notes)
+        notes_file = f.name
+
+    try:
+        result = run_command(
+            f"gh release edit {tag_name} --notes-file {notes_file}",
+            check=False,
+            capture_output=False,
+        )
+        if result.returncode == 0:
+            print(f"Release notes for {tag_name} updated successfully.")
+            return True
+        else:
+            print("Failed to update release notes.", file=sys.stderr)
+            print("\nFiltered release notes to paste manually:")
+            print(full_notes)
+            return False
+    finally:
+        os.unlink(notes_file)
+
+
 def main():
     """Main release automation workflow."""
     parser = argparse.ArgumentParser(
@@ -215,6 +343,11 @@ Uses the local acp.py script automatically.
     parser.add_argument(
         "version",
         help="version number (X.Y.Z format)",
+    )
+    parser.add_argument(
+        "--skip-notes-update",
+        action="store_true",
+        help="skip waiting for GitHub release and updating its notes",
     )
 
     args = parser.parse_args()
@@ -253,13 +386,15 @@ Uses the local acp.py script automatically.
     print("\nCreating and pushing tag...")
     create_and_push_tag(new_version)
 
+    if not args.skip_notes_update:
+        update_release_with_filtered_notes(new_version)
+
     print("\n" + "=" * 50)
     print(f"Release {new_version} completed successfully")
     print("=" * 50)
     print("\nGitHub Actions will now build and publish the release")
     print("Workflow: https://github.com/vbvictor/acp/actions/workflows/release.yaml")
     print(f"Release: https://github.com/vbvictor/acp/releases/tag/v{new_version}")
-    print("\nNote: You can edit the release notes on GitHub to add changelog details")
 
 
 if __name__ == "__main__":
