@@ -21,7 +21,7 @@ _acp() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
     commands="pr checkout completions"
-    opts="-v --verbose -b --body -i --interactive --merge --auto-merge --merge-method -s --sync -a --add -r --reviewers -h --help --version"
+    opts="-v --verbose -b --body -i --interactive -d --draft --merge --auto-merge --merge-method -s --sync -a --add -r --reviewers -h --help --version"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
         if [[ ${cur} == -* ]]; then
@@ -89,6 +89,8 @@ _acp() {
                         '--body[Custom PR body message]:body:' \\
                         '-i[Show PR creation URL]' \\
                         '--interactive[Show PR creation URL]' \\
+                        '-d[Create PR as a draft]' \\
+                        '--draft[Create PR as a draft]' \\
                         '--merge[Merge PR immediately after creation]' \\
                         '--auto-merge[Enable auto-merge when checks pass]' \\
                         '--merge-method[Merge method]:method:(merge squash rebase)' \\
@@ -136,6 +138,7 @@ complete -c acp -n "__fish_seen_subcommand_from completions" -a "bash zsh fish"
 complete -c acp -s v -l verbose -d "Show detailed output"
 complete -c acp -s b -l body -d "Custom PR body message" -r
 complete -c acp -s i -l interactive -d "Show PR creation URL"
+complete -c acp -s d -l draft -d "Create PR as a draft"
 complete -c acp -l merge -d "Merge PR immediately after creation"
 complete -c acp -l auto-merge -d "Enable auto-merge when checks pass"
 complete -c acp -l merge-method -d "Merge method" -r -a "merge squash rebase"
@@ -261,7 +264,7 @@ def parse_github_url(url):
     return "/".join(url.split("/")[-2:]).replace(".git", "")
 
 
-def validate_merge_options(interactive, merge, auto_merge, merge_method):
+def validate_merge_options(interactive, merge, auto_merge, merge_method, draft=False):
     """Validate merge-related command line options.
 
     Exits with error if invalid combination is detected.
@@ -276,6 +279,13 @@ def validate_merge_options(interactive, merge, auto_merge, merge_method):
     if merge and auto_merge:
         print(
             "Error: Cannot use --merge and --auto-merge together",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if draft and (merge or auto_merge):
+        print(
+            "Error: Cannot use --merge or --auto-merge with --draft",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -363,6 +373,7 @@ def create_github_pr(
     is_fork,
     verbose,
     reviewers=None,
+    draft=False,
 ):
     """Create a GitHub PR using gh CLI.
 
@@ -382,6 +393,9 @@ def create_github_pr(
         "--body",
         body,
     ]
+
+    if draft:
+        gh_cmd.append("--draft")
 
     # For forks, we need to specify head as "username:branch"
     if is_fork:
@@ -657,6 +671,7 @@ def show_help():
     print("  -a, --add                   Run 'git add .' before committing changes")
     print("  -b, --body <text>           Custom PR body message")
     print("  -i, --interactive           Show PR creation URL instead of creating PR")
+    print("  -d, --draft                 Create PR as a draft")
     print("  -r, --reviewers <users>     Comma-separated list of GitHub usernames")
     print("  -v, --verbose               Show detailed output")
     print("  --merge                     Merge PR immediately after creation")
@@ -722,10 +737,11 @@ def create_pr(
     sync=False,
     add=False,
     reviewers=None,
+    draft=False,
 ):
     """Create a PR with staged changes."""
     # Validate inputs
-    validate_merge_options(interactive, merge, auto_merge, merge_method)
+    validate_merge_options(interactive, merge, auto_merge, merge_method, draft)
 
     # Run git add . if requested
     if add:
@@ -831,6 +847,7 @@ def create_pr(
                 is_fork,
                 verbose,
                 reviewers,
+                draft,
             )
 
             # Handle merge options
@@ -936,6 +953,12 @@ def main():
         help="Run 'git add .' before committing changes",
     )
     parser.add_argument(
+        "-d",
+        "--draft",
+        action="store_true",
+        help="Create PR as a draft",
+    )
+    parser.add_argument(
         "-r",
         "--reviewers",
         type=str,
@@ -985,6 +1008,7 @@ def main():
                 sync=args.sync,
                 add=args.add,
                 reviewers=args.reviewers,
+                draft=args.draft,
             )
         else:
             show_help()
