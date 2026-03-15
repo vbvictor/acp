@@ -909,6 +909,7 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -927,6 +928,7 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -945,6 +947,7 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -963,6 +966,7 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -983,6 +987,7 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -1001,6 +1006,7 @@ class TestMain:
                 sync=False,
                 add=True,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -1019,6 +1025,7 @@ class TestMain:
                 sync=False,
                 add=True,
                 reviewers=None,
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -1039,6 +1046,7 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers="vbvictor,octodad",
+                draft=False,
             )
 
     @mock.patch("acp.create_pr")
@@ -1057,6 +1065,45 @@ class TestMain:
                 sync=False,
                 add=False,
                 reviewers="user1",
+                draft=False,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_draft_flag(self, mock_create_pr):
+        """Test --draft flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "--draft"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+                merge_method="squash",
+                sync=False,
+                add=False,
+                reviewers=None,
+                draft=True,
+            )
+
+    @mock.patch("acp.create_pr")
+    def test_draft_flag_short(self, mock_create_pr):
+        """Test -d flag is passed."""
+        with mock.patch.object(sys, "argv", ["acp", "pr", "test", "-d"]):
+            acp.main()
+            mock_create_pr.assert_called_once_with(
+                "test",
+                verbose=False,
+                body="",
+                interactive=False,
+                merge=False,
+                auto_merge=False,
+                merge_method="squash",
+                sync=False,
+                add=False,
+                reviewers=None,
+                draft=True,
             )
 
     @mock.patch("subprocess.run")
@@ -1162,6 +1209,46 @@ class TestMain:
                 "test", verbose=False, body="", merge=True, merge_method="invalid"
             )
         assert exc.value.code == 1
+
+    def test_draft_with_merge(self):
+        """Test --draft with --merge raises error."""
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test", verbose=False, body="", merge=True, draft=True)
+        assert exc.value.code == 1
+
+    def test_draft_with_auto_merge(self):
+        """Test --draft with --auto-merge raises error."""
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test", verbose=False, body="", auto_merge=True, draft=True)
+        assert exc.value.code == 1
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run_interactive")
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
+    def test_create_pr_draft(
+        self, mock_run_check, mock_run, mock_run_interactive, mock_subprocess
+    ):
+        """Test PR creation with --draft passes --draft to gh pr create."""
+        mock_run_check.side_effect = [False, True]
+
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="")
+
+        mock_run.side_effect = [
+            "main",
+            "testuser",
+            "git@github.com:user/repo.git",
+            None,  # git checkout -b
+            None,  # git checkout original
+            "https://github.com/user/repo/pull/1",  # gh pr create
+        ]
+
+        acp.create_pr("test commit", verbose=False, body="", draft=True)
+
+        # Verify --draft was passed to gh pr create
+        calls = mock_run.call_args_list
+        pr_create_call = calls[5]
+        assert "--draft" in pr_create_call[0][0]
 
     @mock.patch("subprocess.run")
     @mock.patch("acp.run_interactive")
