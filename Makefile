@@ -1,50 +1,57 @@
-.PHONY: help activate test test-completions lint install clean
+.PHONY: help activate test test-completions lint format install clean
 
-# Default target
 help:
-	@echo "ACP - Automatic Commit Pusher"
-	@echo ""
 	@echo "Available targets:"
-	@echo "  make activate - Create venv and install dev dependencies"
+	@echo ""
+	@echo "  make activate          - Create venv and install dev dependencies"
 	@echo "  make test              - Run unit tests"
 	@echo "  make test-completions  - Run shell completion tests in Docker"
-	@echo "  make lint     - Run linters/formatters"
-	@echo "  make install  - Install acp with pipx from current branch"
-	@echo "  make clean    - Clean up test artifacts"
+	@echo "  make lint              - Run linters"
+	@echo "  make format            - Format code"
+	@echo "  make install           - Install acp with pipx from current branch"
+	@echo "  make clean             - Clean up test artifacts"
 
-# Setup dev environment
 activate:
 	@echo "Setting up development environment..."
 	python3 -m venv venv
 	venv/bin/pip install -e ".[dev]"
 	@echo "Done!"
 
-# Unit tests
 test:
+	@echo "Running tests..."
 	venv/bin/pytest test_acp.py -v
 
-# Shell completion tests (Docker)
 test-completions:
 	docker build -t acp-completions-test -f tests/completions/Dockerfile .
 	docker run --rm acp-completions-test
 
-# Format and lint code
-lint:
+format:
+	@echo "Formatting Python files..."
 	venv/bin/black .
-	venv/bin/ruff check .
-	venv/bin/yamllint -c .yamllint.yaml .github/
-	venv/bin/zizmor --config .zizmor.yml .github/workflows/
-	venv/bin/shellcheck tests/completions/test_completions.sh
-	venv/bin/mypy acp.py
+
+lint:
+	@failed=""; \
+	output=$$(venv/bin/black --check --color . 2>&1) || { echo "$$output"; failed="$$failed black"; }; \
+	output=$$(FORCE_COLOR=1 venv/bin/ruff check . 2>&1) || { echo "$$output"; failed="$$failed ruff"; }; \
+	output=$$(venv/bin/yamllint -f colored -c .yamllint.yaml .github/ 2>&1) || { echo "$$output"; failed="$$failed yamllint"; }; \
+	output=$$(venv/bin/zizmor --color=always --config .zizmor.yml .github/workflows/ 2>&1) || { echo "$$output"; failed="$$failed zizmor"; }; \
+	output=$$(venv/bin/shellcheck --color=always tests/completions/test_completions.sh 2>&1) || { echo "$$output"; failed="$$failed shellcheck"; }; \
+	output=$$(venv/bin/mypy --color-output acp.py 2>&1) || { echo "$$output"; failed="$$failed mypy"; }; \
+	if [ -n "$$failed" ]; then \
+		msg="FAILED LINTERS:$$failed"; \
+		line=$$(printf '%*s' $${#msg} '' | tr ' ' '-'); \
+		echo "\n$$line"; \
+		echo "$$msg"; \
+		echo "$$line"; \
+		exit 1; \
+	else \
+		echo "All linters passed."; \
+	fi
 
 install:
 	pipx install . --force
 
-# Clean up test artifacts
 clean:
-	@echo "Cleaning up test artifacts..."
-	@find . -type f -name "test_integration_file.txt" -delete
-	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
-	@find . -type f -name "*.pyc" -delete
-	@echo "Cleanup completed!"
+	rm -rf __pycache__/ .pytest_cache/
+	rm -rf *.egg-info/
+	rm -f test_integration_file.txt
