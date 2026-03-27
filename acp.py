@@ -530,8 +530,12 @@ def show_help():
     print("  -h, --help                  Show this help message")
     print()
     print("Shell Completions:")
-    print("  Bash:  echo 'eval \"$(register-python-argcomplete acp)\"' >> ~/.bashrc")
-    print("  Zsh:   echo 'eval \"$(register-python-argcomplete acp)\"' >> ~/.zshrc")
+    print(
+        "  Bash:  echo 'eval \"$(register-python-argcomplete --no-defaults acp)\"' >> ~/.bashrc"
+    )
+    print(
+        "  Zsh:   echo 'eval \"$(register-python-argcomplete --no-defaults acp)\"' >> ~/.zshrc"
+    )
     print(
         "  Fish:  register-python-argcomplete --shell fish acp > ~/.config/fish/completions/acp.fish"
     )
@@ -752,6 +756,18 @@ def create_pr(
         raise
 
 
+class _NoFilesCompleter:
+    """Completer that returns nothing and suppresses file fallback."""
+
+    suppress = True
+
+    def __call__(self, **kwargs):
+        return []
+
+
+_no_files = _NoFilesCompleter()
+
+
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
@@ -768,7 +784,7 @@ def main():
     # pr subcommand
     pr_parser = subparsers.add_parser("pr", add_help=False)
     pr_parser.add_argument("message", nargs="?", help=argparse.SUPPRESS).completer = (
-        lambda **kwargs: []
+        _no_files
     )
     pr_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Show detailed output"
@@ -824,9 +840,9 @@ def main():
     checkout_parser = subparsers.add_parser("checkout", add_help=False)
     checkout_parser.add_argument(
         "branch", nargs="?", help=argparse.SUPPRESS
-    ).completer = lambda **kwargs: []
+    ).completer = _no_files
 
-    argcomplete.autocomplete(parser, default_completer=lambda **kwargs: [])
+    argcomplete.autocomplete(parser, default_completer=_no_files)
     args = parser.parse_args()
 
     if args.version:

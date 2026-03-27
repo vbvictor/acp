@@ -100,14 +100,14 @@ To enable tab completion for the `acp` command:
 **Bash:**
 
 ```bash
-echo 'eval "$(register-python-argcomplete acp)"' >> ~/.bashrc
+echo 'eval "$(register-python-argcomplete --no-defaults acp)"' >> ~/.bashrc
 source ~/.bashrc
 ```
 
 **Zsh:**
 
 ```bash
-echo 'eval "$(register-python-argcomplete acp)"' >> ~/.zshrc
+echo 'eval "$(register-python-argcomplete --no-defaults acp)"' >> ~/.zshrc
 source ~/.zshrc
 ```
 
