@@ -36,6 +36,10 @@ make format
 make clean
 ```
 
+## Workflow
+
+Always run `make lint` and `make test` before presenting results to the user.
+
 ## Architecture
 
 The codebase is a single-file CLI tool (`acp.py`) with tests (`test_acp.py`).
