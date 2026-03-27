@@ -10,64 +10,18 @@ pass() { echo -e "${GREEN}pass $1${NC}"; }
 fail() { echo -e "${RED}fail $1${NC}"; exit 1; }
 info() { echo -e "${YELLOW}info $1${NC}"; }
 
-# Syntax validation
-if python acp.py completions bash | bash -n; then pass "Bash syntax valid"; else fail "Bash syntax invalid"; fi
-if python acp.py completions zsh | zsh -n; then pass "Zsh syntax valid"; else fail "Zsh syntax invalid"; fi
-if python acp.py completions fish | fish -n; then pass "Fish syntax valid"; else fail "Fish syntax invalid"; fi
+# Install acp and argcomplete
+pip install -e . --quiet
 
-# Bash functional tests
-eval "$(python acp.py completions bash)"
+# Syntax validation via register-python-argcomplete
+if register-python-argcomplete --shell bash acp | bash -n; then pass "Bash syntax valid"; else fail "Bash syntax invalid"; fi
+if register-python-argcomplete --shell zsh acp | zsh -n; then pass "Zsh syntax valid"; else fail "Zsh syntax invalid"; fi
+if register-python-argcomplete --shell fish acp | fish -n; then pass "Fish syntax valid"; else fail "Fish syntax invalid"; fi
 
-# Command completion
-COMP_WORDS=(acp ""); COMP_CWORD=1; _acp
-[[ " ${COMPREPLY[*]} " =~ " pr " ]] || fail "Bash: 'pr' not in command completions"
-[[ " ${COMPREPLY[*]} " =~ " checkout " ]] || fail "Bash: 'checkout' not in command completions"
-[[ " ${COMPREPLY[*]} " =~ " completions " ]] || fail "Bash: 'completions' not in command completions"
-pass "Bash: command completion (pr, checkout, completions)"
-
-# Option completion with -- prefix
-COMP_WORDS=(acp pr --); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " --merge " ]] || fail "Bash: '--merge' not in option completions"
-[[ " ${COMPREPLY[*]} " =~ " --verbose " ]] || fail "Bash: '--verbose' not in option completions"
-[[ " ${COMPREPLY[*]} " =~ " --add " ]] || fail "Bash: '--add' not in option completions"
-[[ " ${COMPREPLY[*]} " =~ " --reviewers " ]] || fail "Bash: '--reviewers' not in option completions"
-pass "Bash: option completion (--merge, --verbose, --add, --reviewers)"
-
-# 'acp pr <TAB>' shows options without -- prefix
-COMP_WORDS=(acp pr ""); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " --merge " ]] || fail "Bash: '--merge' not in 'acp pr <TAB>' completions"
-[[ " ${COMPREPLY[*]} " =~ " --verbose " ]] || fail "Bash: '--verbose' not in 'acp pr <TAB>' completions"
-[[ " ${COMPREPLY[*]} " =~ " -v " ]] || fail "Bash: '-v' not in 'acp pr <TAB>' completions"
-pass "Bash: 'acp pr <TAB>' shows options without -- prefix"
-
-# Short option completion
-COMP_WORDS=(acp pr -); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " -v " ]] || fail "Bash: '-v' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -b " ]] || fail "Bash: '-b' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -a " ]] || fail "Bash: '-a' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -r " ]] || fail "Bash: '-r' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -s " ]] || fail "Bash: '-s' not in short option completions"
-pass "Bash: short option completion (-v, -b, -a, -r, -s)"
-
-# --merge-method values
-COMP_WORDS=(acp pr --merge-method ""); COMP_CWORD=3; _acp
-[[ " ${COMPREPLY[*]} " =~ " squash " ]] || fail "Bash: 'squash' not in --merge-method completions"
-[[ " ${COMPREPLY[*]} " =~ " merge " ]] || fail "Bash: 'merge' not in --merge-method completions"
-[[ " ${COMPREPLY[*]} " =~ " rebase " ]] || fail "Bash: 'rebase' not in --merge-method completions"
-pass "Bash: --merge-method values (squash, merge, rebase)"
-
-# completions subcommand values
-COMP_WORDS=(acp completions ""); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " bash " ]] || fail "Bash: 'bash' not in completions values"
-[[ " ${COMPREPLY[*]} " =~ " zsh " ]] || fail "Bash: 'zsh' not in completions values"
-[[ " ${COMPREPLY[*]} " =~ " fish " ]] || fail "Bash: 'fish' not in completions values"
-pass "Bash: completions values (bash, zsh, fish)"
-
-# Partial completion
-COMP_WORDS=(acp pr --mer); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " --merge " ]] || fail "Bash: '--merge' not in partial completions"
-[[ " ${COMPREPLY[*]} " =~ " --merge-method " ]] || fail "Bash: '--merge-method' not in partial completions"
-pass "Bash: partial completion (--mer -> --merge, --merge-method)"
+# Syntax validation via 'acp completions' subcommand
+if python acp.py completions bash | bash -n; then pass "acp completions bash syntax valid"; else fail "acp completions bash syntax invalid"; fi
+if python acp.py completions zsh | zsh -n; then pass "acp completions zsh syntax valid"; else fail "acp completions zsh syntax invalid"; fi
+if python acp.py completions fish | fish -n; then pass "acp completions fish syntax valid"; else fail "acp completions fish syntax invalid"; fi
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"

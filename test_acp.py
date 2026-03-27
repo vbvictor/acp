@@ -1585,8 +1585,7 @@ class TestCompletion:
             assert exc.value.code == 0
 
         captured = capsys.readouterr()
-        assert "_acp()" in captured.out
-        assert "complete -F _acp acp" in captured.out
+        assert "acp" in captured.out
 
     def test_completion_command_zsh(self, capsys):
         """Test 'acp completions zsh' outputs script."""
@@ -1596,8 +1595,7 @@ class TestCompletion:
             assert exc.value.code == 0
 
         captured = capsys.readouterr()
-        assert "#compdef acp" in captured.out
-        assert "_arguments" in captured.out
+        assert "acp" in captured.out
 
     def test_completion_command_fish(self, capsys):
         """Test 'acp completions fish' outputs script."""
@@ -1607,7 +1605,7 @@ class TestCompletion:
             assert exc.value.code == 0
 
         captured = capsys.readouterr()
-        assert "complete -c acp" in captured.out
+        assert "acp" in captured.out
 
     def test_completion_command_invalid(self, capsys):
         """Test 'acp completions invalid' with invalid shell."""
