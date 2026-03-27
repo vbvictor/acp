@@ -26,5 +26,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends zsh fish
 
+      - name: Install acp
+        run: pip install -e .
+
       - name: Run completion tests
         run: bash tests/completions/test_completions.sh

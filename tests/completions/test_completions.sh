@@ -10,64 +10,125 @@ pass() { echo -e "${GREEN}pass $1${NC}"; }
 fail() { echo -e "${RED}fail $1${NC}"; exit 1; }
 info() { echo -e "${YELLOW}info $1${NC}"; }
 
+pip install -e . --quiet
+
+# Get argcomplete completions for a given command line.
+# Uses argcomplete's env var protocol: set _ARGCOMPLETE=1, COMP_LINE, COMP_POINT,
+# then run the program and capture output from fd 8.
+get_completions() {
+    local comp_line="$1"
+    _ARGCOMPLETE=1 \
+    _ARGCOMPLETE_IFS=$'\013' \
+    COMP_LINE="$comp_line" \
+    COMP_POINT=${#comp_line} \
+    acp 8>&1 9>&2 1>/dev/null 2>/dev/null || true
+}
+
+# Assert that a completion result contains a value.
+assert_has() {
+    local completions="$1" value="$2" context="$3"
+    [[ "$completions" == *"$value"* ]] || fail "$context: '$value' not found"
+}
+
+# Assert that a completion result does NOT contain a value.
+assert_not_has() {
+    local completions="$1" value="$2" context="$3"
+    [[ "$completions" != *"$value"* ]] || fail "$context: '$value' should not be present"
+}
+
+# =============================================================================
 # Syntax validation
-if python acp.py completions bash | bash -n; then pass "Bash syntax valid"; else fail "Bash syntax invalid"; fi
-if python acp.py completions zsh | zsh -n; then pass "Zsh syntax valid"; else fail "Zsh syntax invalid"; fi
-if python acp.py completions fish | fish -n; then pass "Fish syntax valid"; else fail "Fish syntax invalid"; fi
+# =============================================================================
 
-# Bash functional tests
-eval "$(python acp.py completions bash)"
+# register-python-argcomplete output
+if register-python-argcomplete --shell bash acp | bash -n; then pass "Bash syntax valid"; else fail "Bash syntax invalid"; fi
+if register-python-argcomplete --shell zsh acp | zsh -n; then pass "Zsh syntax valid"; else fail "Zsh syntax invalid"; fi
+if register-python-argcomplete --shell fish acp | fish -n; then pass "Fish syntax valid"; else fail "Fish syntax invalid"; fi
 
-# Command completion
-COMP_WORDS=(acp ""); COMP_CWORD=1; _acp
-[[ " ${COMPREPLY[*]} " =~ " pr " ]] || fail "Bash: 'pr' not in command completions"
-[[ " ${COMPREPLY[*]} " =~ " checkout " ]] || fail "Bash: 'checkout' not in command completions"
-[[ " ${COMPREPLY[*]} " =~ " completions " ]] || fail "Bash: 'completions' not in command completions"
-pass "Bash: command completion (pr, checkout, completions)"
+# acp completions subcommand output
+if python acp.py completions bash | bash -n; then pass "acp completions bash syntax valid"; else fail "acp completions bash syntax invalid"; fi
+if python acp.py completions zsh | zsh -n; then pass "acp completions zsh syntax valid"; else fail "acp completions zsh syntax invalid"; fi
+if python acp.py completions fish | fish -n; then pass "acp completions fish syntax valid"; else fail "acp completions fish syntax invalid"; fi
 
-# Option completion with -- prefix
-COMP_WORDS=(acp pr --); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " --merge " ]] || fail "Bash: '--merge' not in option completions"
-[[ " ${COMPREPLY[*]} " =~ " --verbose " ]] || fail "Bash: '--verbose' not in option completions"
-[[ " ${COMPREPLY[*]} " =~ " --add " ]] || fail "Bash: '--add' not in option completions"
-[[ " ${COMPREPLY[*]} " =~ " --reviewers " ]] || fail "Bash: '--reviewers' not in option completions"
-pass "Bash: option completion (--merge, --verbose, --add, --reviewers)"
+# =============================================================================
+# Top-level command completions: "acp <TAB>"
+# =============================================================================
 
-# 'acp pr <TAB>' shows options without -- prefix
-COMP_WORDS=(acp pr ""); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " --merge " ]] || fail "Bash: '--merge' not in 'acp pr <TAB>' completions"
-[[ " ${COMPREPLY[*]} " =~ " --verbose " ]] || fail "Bash: '--verbose' not in 'acp pr <TAB>' completions"
-[[ " ${COMPREPLY[*]} " =~ " -v " ]] || fail "Bash: '-v' not in 'acp pr <TAB>' completions"
-pass "Bash: 'acp pr <TAB>' shows options without -- prefix"
+completions=$(get_completions "acp ")
+assert_has "$completions" "pr" "acp <TAB>"
+assert_has "$completions" "checkout" "acp <TAB>"
+assert_has "$completions" "completions" "acp <TAB>"
+assert_not_has "$completions" ".py" "acp <TAB> (no files)"
+pass "acp <TAB>: shows subcommands, no files"
 
-# Short option completion
-COMP_WORDS=(acp pr -); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " -v " ]] || fail "Bash: '-v' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -b " ]] || fail "Bash: '-b' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -a " ]] || fail "Bash: '-a' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -r " ]] || fail "Bash: '-r' not in short option completions"
-[[ " ${COMPREPLY[*]} " =~ " -s " ]] || fail "Bash: '-s' not in short option completions"
-pass "Bash: short option completion (-v, -b, -a, -r, -s)"
+# =============================================================================
+# PR subcommand: "acp pr <TAB>" and "acp pr -<TAB>"
+# =============================================================================
 
-# --merge-method values
-COMP_WORDS=(acp pr --merge-method ""); COMP_CWORD=3; _acp
-[[ " ${COMPREPLY[*]} " =~ " squash " ]] || fail "Bash: 'squash' not in --merge-method completions"
-[[ " ${COMPREPLY[*]} " =~ " merge " ]] || fail "Bash: 'merge' not in --merge-method completions"
-[[ " ${COMPREPLY[*]} " =~ " rebase " ]] || fail "Bash: 'rebase' not in --merge-method completions"
-pass "Bash: --merge-method values (squash, merge, rebase)"
+# "acp pr <TAB>" should show options, not files
+completions=$(get_completions "acp pr ")
+assert_not_has "$completions" ".py" "acp pr <TAB> (no files)"
+pass "acp pr <TAB>: no file completions"
 
-# completions subcommand values
-COMP_WORDS=(acp completions ""); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " bash " ]] || fail "Bash: 'bash' not in completions values"
-[[ " ${COMPREPLY[*]} " =~ " zsh " ]] || fail "Bash: 'zsh' not in completions values"
-[[ " ${COMPREPLY[*]} " =~ " fish " ]] || fail "Bash: 'fish' not in completions values"
-pass "Bash: completions values (bash, zsh, fish)"
+# "acp pr -<TAB>" should show pr-specific options
+completions=$(get_completions "acp pr -")
+assert_has "$completions" "--verbose" "acp pr -<TAB>"
+assert_has "$completions" "--merge" "acp pr -<TAB>"
+assert_has "$completions" "--auto-merge" "acp pr -<TAB>"
+assert_has "$completions" "--add" "acp pr -<TAB>"
+assert_has "$completions" "--reviewers" "acp pr -<TAB>"
+assert_has "$completions" "--draft" "acp pr -<TAB>"
+assert_has "$completions" "--body" "acp pr -<TAB>"
+assert_has "$completions" "--interactive" "acp pr -<TAB>"
+assert_has "$completions" "--sync" "acp pr -<TAB>"
+assert_has "$completions" "--merge-method" "acp pr -<TAB>"
+assert_has "$completions" "-v" "acp pr -<TAB>"
+assert_has "$completions" "-a" "acp pr -<TAB>"
+assert_has "$completions" "-d" "acp pr -<TAB>"
+assert_has "$completions" "-r" "acp pr -<TAB>"
+assert_has "$completions" "-s" "acp pr -<TAB>"
+assert_has "$completions" "-b" "acp pr -<TAB>"
+assert_has "$completions" "-i" "acp pr -<TAB>"
+pass "acp pr -<TAB>: shows all pr options"
 
-# Partial completion
-COMP_WORDS=(acp pr --mer); COMP_CWORD=2; _acp
-[[ " ${COMPREPLY[*]} " =~ " --merge " ]] || fail "Bash: '--merge' not in partial completions"
-[[ " ${COMPREPLY[*]} " =~ " --merge-method " ]] || fail "Bash: '--merge-method' not in partial completions"
-pass "Bash: partial completion (--mer -> --merge, --merge-method)"
+# --merge-method choices
+completions=$(get_completions "acp pr --merge-method ")
+assert_has "$completions" "squash" "acp pr --merge-method <TAB>"
+assert_has "$completions" "merge" "acp pr --merge-method <TAB>"
+assert_has "$completions" "rebase" "acp pr --merge-method <TAB>"
+pass "acp pr --merge-method <TAB>: shows choices (squash, merge, rebase)"
+
+# =============================================================================
+# Checkout subcommand: "acp checkout <TAB>" should show nothing (no files)
+# =============================================================================
+
+completions=$(get_completions "acp checkout ")
+assert_not_has "$completions" ".py" "acp checkout <TAB> (no files)"
+assert_not_has "$completions" "--merge" "acp checkout <TAB> (no pr options)"
+assert_not_has "$completions" "--verbose" "acp checkout <TAB> (no pr options)"
+assert_not_has "$completions" "--add" "acp checkout <TAB> (no pr options)"
+[ -z "$completions" ] || fail "acp checkout <TAB>: expected empty, got '$completions'"
+pass "acp checkout <TAB>: no completions (expects branch name)"
+
+# "acp checkout -<TAB>" should NOT show pr options
+completions=$(get_completions "acp checkout -")
+assert_not_has "$completions" "--merge" "acp checkout -<TAB> (no pr options)"
+assert_not_has "$completions" "--verbose" "acp checkout -<TAB> (no pr options)"
+assert_not_has "$completions" "--add" "acp checkout -<TAB> (no pr options)"
+assert_not_has "$completions" "--reviewers" "acp checkout -<TAB> (no pr options)"
+pass "acp checkout -<TAB>: no pr options leak"
+
+# =============================================================================
+# Completions subcommand: "acp completions <TAB>" should show shells only
+# =============================================================================
+
+completions=$(get_completions "acp completions ")
+assert_has "$completions" "bash" "acp completions <TAB>"
+assert_has "$completions" "zsh" "acp completions <TAB>"
+assert_has "$completions" "fish" "acp completions <TAB>"
+assert_not_has "$completions" ".py" "acp completions <TAB> (no files)"
+assert_not_has "$completions" "--merge" "acp completions <TAB> (no pr options)"
+pass "acp completions <TAB>: shows only shells"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"
