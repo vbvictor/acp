@@ -40,6 +40,8 @@ make clean
 
 Always run `make lint` and `make test` before presenting results to the user.
 
+To create a pull request: `acp pr -a "feat: add <description>"` (the `-a` flag stages all changes automatically).
+
 ## Architecture
 
 The codebase is a single-file CLI tool (`acp.py`) with tests (`test_acp.py`).
