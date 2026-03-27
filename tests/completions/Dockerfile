@@ -8,9 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY acp.py .
+COPY pyproject.toml acp.py ./
 COPY tests/completions/test_completions.sh .
 
+RUN pip install -e . --quiet
 RUN chmod +x test_completions.sh
 
 CMD ["./test_completions.sh"]

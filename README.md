@@ -93,6 +93,30 @@ remote tracking branch will also be deleted to keep workspace clean.
 
 Contributions welcome! Please open an issue if you have an idea or submit a pull request.
 
+### Shell autocomplete
+
+To enable tab completion for the `acp` command:
+
+**Bash:**
+
+```bash
+echo 'eval "$(register-python-argcomplete acp)"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Zsh:**
+
+```bash
+echo 'eval "$(register-python-argcomplete acp)"' >> ~/.zshrc
+source ~/.zshrc
+```
+
+**Fish:**
+
+```bash
+register-python-argcomplete --shell fish acp > ~/.config/fish/completions/acp.fish
+```
+
 ### Developer environment
 
 To create a virtual environment, install dev dependencies, and run tests:
