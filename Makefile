@@ -35,6 +35,7 @@ lint:
 	venv/bin/yamllint -c .yamllint.yaml .github/
 	venv/bin/zizmor --config .zizmor.yml .github/workflows/
 	venv/bin/shellcheck tests/completions/test_completions.sh
+	venv/bin/mypy acp.py
 
 install:
 	pipx install . --force
