@@ -33,6 +33,7 @@ lint:
 	venv/bin/black .
 	venv/bin/ruff check .
 	venv/bin/yamllint -c .yamllint.yaml .github/
+	venv/bin/shellcheck tests/completions/test_completions.sh
 
 install:
 	pipx install . --force

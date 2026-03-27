@@ -11,9 +11,9 @@ fail() { echo -e "${RED}fail $1${NC}"; exit 1; }
 info() { echo -e "${YELLOW}info $1${NC}"; }
 
 # Syntax validation
-python acp.py completions bash | bash -n && pass "Bash syntax valid" || fail "Bash syntax invalid"
-python acp.py completions zsh | zsh -n && pass "Zsh syntax valid" || fail "Zsh syntax invalid"
-python acp.py completions fish | fish -n && pass "Fish syntax valid" || fail "Fish syntax invalid"
+if python acp.py completions bash | bash -n; then pass "Bash syntax valid"; else fail "Bash syntax invalid"; fi
+if python acp.py completions zsh | zsh -n; then pass "Zsh syntax valid"; else fail "Zsh syntax invalid"; fi
+if python acp.py completions fish | fish -n; then pass "Fish syntax valid"; else fail "Fish syntax invalid"; fi
 
 # Bash functional tests
 eval "$(python acp.py completions bash)"
