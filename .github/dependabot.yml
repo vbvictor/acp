@@ -6,7 +6,7 @@ updates:
       interval: "weekly"
       day: "monday"
     cooldown:
-      default-days: 3
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore:"
@@ -21,7 +21,7 @@ updates:
       interval: "weekly"
       day: "monday"
     cooldown:
-      default-days: 3
+      default-days: 7
     open-pull-requests-limit: 5
     commit-message:
       prefix: "chore:"
