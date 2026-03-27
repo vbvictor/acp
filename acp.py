@@ -760,8 +760,8 @@ def main():
         description="acp - create PRs in one command",
         add_help=False,
     )
-    parser.add_argument("-h", "--help", action="store_true", help=argparse.SUPPRESS)
-    parser.add_argument("--version", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("-h", "--help", action="store_true", help="Show help message")
+    parser.add_argument("--version", action="store_true", help="Show version number")
 
     subparsers = parser.add_subparsers(dest="command")
 
