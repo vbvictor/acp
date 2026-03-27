@@ -133,12 +133,12 @@ def stage_files():
     print("Staged modified files")
 
 
-def create_pr_and_merge(version):
+def create_pr_and_merge(current_version, version):
     """Create PR and merge it immediately using local acp.py.
 
     Always uses --sync to ensure the current branch is updated with the merge.
     """
-    commit_message = f"chore: bump version to {version}"
+    commit_message = f"chore: bump acp version from {current_version} to {version}"
 
     print(f"\nCreating PR with acp: '{commit_message}'")
 
@@ -248,7 +248,7 @@ Uses the local acp.py script automatically.
     stage_files()
 
     print("\nCreating and merging PR...")
-    create_pr_and_merge(new_version)
+    create_pr_and_merge(current_version, new_version)
 
     print("\nCreating and pushing tag...")
     create_and_push_tag(new_version)
