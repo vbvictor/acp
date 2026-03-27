@@ -1,0 +1,10 @@
+ls:
+  .py: snake_case
+  .sh: snake_case
+  .yaml: kebab-case
+  .yml: kebab-case
+
+ignore:
+  - venv
+  - .git
+  - acp_gh.egg-info
