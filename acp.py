@@ -14,24 +14,6 @@ import argcomplete
 __version__ = "1.3.0"
 
 
-def print_completion(shell):
-    """Print completion script for the specified shell using argcomplete."""
-    supported = ("bash", "zsh", "fish")
-    if shell not in supported:
-        print(f"Error: Unknown shell '{shell}'", file=sys.stderr)
-        print("Supported shells: bash, zsh, fish", file=sys.stderr)
-        sys.exit(1)
-    result = subprocess.run(
-        ["register-python-argcomplete", "--shell", shell, "acp"],
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        print(f"Error: {result.stderr}", file=sys.stderr)
-        sys.exit(1)
-    print(result.stdout)
-
-
 def run(cmd, quiet=False):
     """Run a command and return output."""
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -524,15 +506,11 @@ def show_help():
     """Show help message."""
     print("usage: acp pr <commit message> [pr options]")
     print("       acp checkout <branch>")
-    print("       acp completions <shell>")
     print()
     print("Commands:")
     print("  pr <message>                Create a PR with staged changes")
     print(
         "  checkout <branch>           Checkout a branch, stripping 'user:' prefix if present"
-    )
-    print(
-        "  completions <shell>         Output shell completion script (bash, zsh, fish)"
     )
     print()
     print("PR Options:")
@@ -552,10 +530,11 @@ def show_help():
     print("  -h, --help                  Show this help message")
     print()
     print("Shell Completions:")
-    print("  Bash:  echo 'eval \"$(acp completions bash)\"' >> ~/.bashrc")
-    print("  Zsh:   echo 'eval \"$(acp completions zsh)\"' >> ~/.zshrc")
-    print("  Fish:  acp completions fish | source")
-    print("         Or save to: ~/.config/fish/completions/acp.fish")
+    print("  Bash:  echo 'eval \"$(register-python-argcomplete acp)\"' >> ~/.bashrc")
+    print("  Zsh:   echo 'eval \"$(register-python-argcomplete acp)\"' >> ~/.zshrc")
+    print(
+        "  Fish:  register-python-argcomplete --shell fish acp > ~/.config/fish/completions/acp.fish"
+    )
     print()
     print("Examples:")
     print('  acp pr "fix: some typo" -i')
@@ -847,12 +826,6 @@ def main():
         "branch", nargs="?", help=argparse.SUPPRESS
     ).completer = lambda **kwargs: []
 
-    # completions subcommand
-    completions_parser = subparsers.add_parser("completions", add_help=False)
-    completions_parser.add_argument(
-        "shell", nargs="?", choices=["bash", "zsh", "fish"], help=argparse.SUPPRESS
-    )
-
     argcomplete.autocomplete(parser, default_completer=lambda **kwargs: [])
     args = parser.parse_args()
 
@@ -865,13 +838,7 @@ def main():
         sys.exit(0)
 
     try:
-        if args.command == "completions":
-            if not args.shell:
-                print("Error: Shell name required (bash, zsh, fish)", file=sys.stderr)
-                sys.exit(1)
-            print_completion(args.shell)
-            sys.exit(0)
-        elif args.command == "checkout":
+        if args.command == "checkout":
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)
                 sys.exit(1)
