@@ -782,7 +782,13 @@ def main():
         add_help=False,
     )
 
-    parser.add_argument("command", nargs="?", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "command",
+        nargs="?",
+        help=argparse.SUPPRESS,
+    ).completer = argcomplete.completers.ChoicesCompleter(
+        ["pr", "checkout", "completions"]
+    )
     parser.add_argument("message", nargs="?", help=argparse.SUPPRESS)
     parser.add_argument(
         "-v", "--verbose", action="store_true", help="Show detailed output"
