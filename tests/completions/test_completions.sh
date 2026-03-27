@@ -37,18 +37,12 @@ assert_not_has() {
 }
 
 # =============================================================================
-# Syntax validation
+# Syntax validation via register-python-argcomplete
 # =============================================================================
 
-# register-python-argcomplete output
 if register-python-argcomplete --shell bash acp | bash -n; then pass "Bash syntax valid"; else fail "Bash syntax invalid"; fi
 if register-python-argcomplete --shell zsh acp | zsh -n; then pass "Zsh syntax valid"; else fail "Zsh syntax invalid"; fi
 if register-python-argcomplete --shell fish acp | fish -n; then pass "Fish syntax valid"; else fail "Fish syntax invalid"; fi
-
-# acp completions subcommand output
-if python acp.py completions bash | bash -n; then pass "acp completions bash syntax valid"; else fail "acp completions bash syntax invalid"; fi
-if python acp.py completions zsh | zsh -n; then pass "acp completions zsh syntax valid"; else fail "acp completions zsh syntax invalid"; fi
-if python acp.py completions fish | fish -n; then pass "acp completions fish syntax valid"; else fail "acp completions fish syntax invalid"; fi
 
 # =============================================================================
 # Top-level command completions: "acp <TAB>"
@@ -57,7 +51,6 @@ if python acp.py completions fish | fish -n; then pass "acp completions fish syn
 completions=$(get_completions "acp ")
 assert_has "$completions" "pr" "acp <TAB>"
 assert_has "$completions" "checkout" "acp <TAB>"
-assert_has "$completions" "completions" "acp <TAB>"
 assert_not_has "$completions" ".py" "acp <TAB> (no files)"
 pass "acp <TAB>: shows subcommands, no files"
 
@@ -117,18 +110,6 @@ assert_not_has "$completions" "--verbose" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--add" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--reviewers" "acp checkout -<TAB> (no pr options)"
 pass "acp checkout -<TAB>: no pr options leak"
-
-# =============================================================================
-# Completions subcommand: "acp completions <TAB>" should show shells only
-# =============================================================================
-
-completions=$(get_completions "acp completions ")
-assert_has "$completions" "bash" "acp completions <TAB>"
-assert_has "$completions" "zsh" "acp completions <TAB>"
-assert_has "$completions" "fish" "acp completions <TAB>"
-assert_not_has "$completions" ".py" "acp completions <TAB> (no files)"
-assert_not_has "$completions" "--merge" "acp completions <TAB> (no pr options)"
-pass "acp completions <TAB>: shows only shells"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"
