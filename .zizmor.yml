@@ -1,0 +1,17 @@
+rules:
+  unpinned-uses:
+    ignore:
+      - claude.yml
+      - claude-code-review.yml
+  artipacked:
+    ignore:
+      - claude.yml
+      - claude-code-review.yml
+  secrets-outside-env:
+    ignore:
+      - claude.yml
+      - claude-code-review.yml
+  # TODO: replace softprops/action-gh-release with `gh release create` and remove this ignore
+  superfluous-actions:
+    ignore:
+      - release.yaml
