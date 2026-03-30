@@ -1205,9 +1205,7 @@ class TestFetchUpstreamBranch:
     @mock.patch("acp.run_check")
     def test_fetch_from_origin_when_no_upstream(self, mock_run_check):
         def side_effect(cmd):
-            if cmd == ["git", "remote", "get-url", "upstream"]:
-                return False
-            return True
+            return cmd != ["git", "remote", "get-url", "upstream"]
 
         mock_run_check.side_effect = side_effect
         acp.fetch_upstream_branch("main")
@@ -1217,9 +1215,7 @@ class TestFetchUpstreamBranch:
     @mock.patch("acp.run_check")
     def test_no_merge_when_fetch_fails(self, mock_run_check):
         def side_effect(cmd):
-            if cmd[0:2] == ["git", "fetch"]:
-                return False
-            return True
+            return cmd[0:2] != ["git", "fetch"]
 
         mock_run_check.side_effect = side_effect
         acp.fetch_upstream_branch("main")

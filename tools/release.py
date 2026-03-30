@@ -24,14 +24,13 @@ from pathlib import Path
 
 def run_command(cmd, check=True, capture_output=True):
     """Run a shell command and return the result."""
-    result = subprocess.run(
+    return subprocess.run(
         cmd,
         shell=True,
         check=check,
         capture_output=capture_output,
         text=True,
     )
-    return result
 
 
 def validate_version(version):
