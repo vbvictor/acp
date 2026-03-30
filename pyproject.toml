@@ -69,6 +69,22 @@ acp = "acp:main"
 [tool.setuptools]
 py-modules = ["acp"]
 
-[tool.ruff]
-# Ignore line length rules (E501) - using black for formatting
-lint.ignore = ["E501"]
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "E501",    # line length - handled by black
+    "D",       # docstrings - not every function needs one
+    "ANN",     # type annotations - use mypy instead, ruff only checks presence not correctness
+    "S",       # security - this CLI tool is a subprocess wrapper, not a web app
+    "T201",    # print() - this is a CLI tool, print is the UI
+    "COM812",  # trailing commas - conflicts with black formatter
+    "EXE001",  # shebang - platform-specific
+    "FBT",     # boolean args - would require enums/separate functions for simple internal helpers
+    "ARG",     # unused args - some exist for API consistency (e.g. quiet param)
+    "PLC0415", # import inside function - intentional lazy imports for os, time, json
+    "PLR",     # pylint refactor - magic values (0, 1), complexity limits don't fit CLI orchestration
+    "PLW1510", # subprocess.run without check - we check returncode manually
+    "RET505",  # elif after return - if/elif dispatch chains are more readable
+    "BLE001",  # blind except - intentional in error recovery to switch back to original branch
+    "C901",    # complexity - orchestration functions are inherently complex
+]
