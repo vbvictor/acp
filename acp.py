@@ -12,7 +12,7 @@ from typing import Any
 
 import argcomplete
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 
 def run(cmd: list[str], quiet: bool = False) -> str:
