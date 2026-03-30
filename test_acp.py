@@ -1520,34 +1520,105 @@ class TestIsGithubUser:
         assert acp.is_github_user("not-a-real-user-12345") is False
 
 
+class TestFetchUpstreamBranch:
+    """Test the fetch_upstream_branch() function."""
+
+    @mock.patch("acp.run_check")
+    def test_fetch_from_upstream_when_available(self, mock_run_check):
+        """Test fetching from upstream remote when it exists."""
+        mock_run_check.return_value = True
+        acp.fetch_upstream_branch("main")
+        mock_run_check.assert_any_call(["git", "remote", "get-url", "upstream"])
+        mock_run_check.assert_any_call(["git", "fetch", "upstream", "main"])
+        mock_run_check.assert_any_call(["git", "merge", "--ff-only", "upstream/main"])
+
+    @mock.patch("acp.run_check")
+    def test_fetch_from_origin_when_no_upstream(self, mock_run_check):
+        """Test falling back to origin when upstream doesn't exist."""
+
+        def side_effect(cmd):
+            if cmd == ["git", "remote", "get-url", "upstream"]:
+                return False
+            return True
+
+        mock_run_check.side_effect = side_effect
+        acp.fetch_upstream_branch("main")
+        mock_run_check.assert_any_call(["git", "fetch", "origin", "main"])
+        mock_run_check.assert_any_call(["git", "merge", "--ff-only", "origin/main"])
+
+    @mock.patch("acp.run_check")
+    def test_no_merge_when_fetch_fails(self, mock_run_check):
+        """Test that merge is skipped when fetch fails."""
+
+        def side_effect(cmd):
+            if cmd[0:2] == ["git", "fetch"]:
+                return False
+            return True
+
+        mock_run_check.side_effect = side_effect
+        acp.fetch_upstream_branch("main")
+        # merge should not be called
+        for call in mock_run_check.call_args_list:
+            assert call[0][0][:2] != ["git", "merge"]
+
+
 class TestCheckoutBranch:
     """Test the checkout_branch() function."""
 
+    @mock.patch("acp.fetch_upstream_branch")
     @mock.patch("acp.run")
     @mock.patch("acp.is_github_user")
-    def test_checkout_with_valid_user_prefix(self, mock_is_user, mock_run):
+    def test_checkout_with_valid_user_prefix(self, mock_is_user, mock_run, mock_fetch):
         """Test checkout strips prefix when it's a valid GitHub user."""
         mock_is_user.return_value = True
         acp.checkout_branch("vbvictor:acp/vbvictor/1234")
         mock_is_user.assert_called_once_with("vbvictor")
         mock_run.assert_called_once_with(["git", "checkout", "acp/vbvictor/1234"])
+        mock_fetch.assert_not_called()
 
+    @mock.patch("acp.fetch_upstream_branch")
     @mock.patch("acp.run")
     @mock.patch("acp.is_github_user")
-    def test_checkout_with_invalid_user_prefix(self, mock_is_user, mock_run):
+    def test_checkout_with_invalid_user_prefix(
+        self, mock_is_user, mock_run, mock_fetch
+    ):
         """Test checkout keeps branch as-is when prefix is not a GitHub user."""
         mock_is_user.return_value = False
         acp.checkout_branch("feature:fix")
         mock_is_user.assert_called_once_with("feature")
         mock_run.assert_called_once_with(["git", "checkout", "feature:fix"])
+        mock_fetch.assert_not_called()
 
+    @mock.patch("acp.fetch_upstream_branch")
     @mock.patch("acp.run")
     @mock.patch("acp.is_github_user")
-    def test_checkout_without_colon(self, mock_is_user, mock_run):
+    def test_checkout_without_colon(self, mock_is_user, mock_run, mock_fetch):
         """Test checkout without colon doesn't check GitHub user."""
         acp.checkout_branch("feature-branch")
         mock_is_user.assert_not_called()
         mock_run.assert_called_once_with(["git", "checkout", "feature-branch"])
+        mock_fetch.assert_not_called()
+
+    @mock.patch("acp.fetch_upstream_branch")
+    @mock.patch("acp.run")
+    @mock.patch("acp.is_github_user")
+    def test_checkout_with_fetch_flag(self, mock_is_user, mock_run, mock_fetch):
+        """Test checkout fetches upstream when fetch=True."""
+        acp.checkout_branch("feature-branch", fetch=True)
+        mock_run.assert_called_once_with(["git", "checkout", "feature-branch"])
+        mock_fetch.assert_called_once_with("feature-branch")
+
+    @mock.patch("acp.fetch_upstream_branch")
+    @mock.patch("acp.run")
+    @mock.patch("acp.is_github_user")
+    def test_checkout_with_fetch_and_user_prefix(
+        self, mock_is_user, mock_run, mock_fetch
+    ):
+        """Test checkout with fetch strips prefix and fetches."""
+        mock_is_user.return_value = True
+        acp.checkout_branch("vbvictor:main", fetch=True)
+        mock_run.assert_called_once_with(["git", "checkout", "main"])
+        mock_fetch.assert_called_once_with("main")
 
 
 class TestCheckoutCommand:
@@ -1558,7 +1629,21 @@ class TestCheckoutCommand:
         """Test checkout command calls checkout_branch."""
         with mock.patch.object(sys, "argv", ["acp", "checkout", "user:branch"]):
             acp.main()
-            mock_checkout.assert_called_once_with("user:branch")
+            mock_checkout.assert_called_once_with("user:branch", fetch=False)
+
+    @mock.patch("acp.checkout_branch")
+    def test_checkout_command_with_fetch(self, mock_checkout):
+        """Test checkout command with --fetch flag."""
+        with mock.patch.object(sys, "argv", ["acp", "checkout", "--fetch", "main"]):
+            acp.main()
+            mock_checkout.assert_called_once_with("main", fetch=True)
+
+    @mock.patch("acp.checkout_branch")
+    def test_checkout_command_with_fetch_short(self, mock_checkout):
+        """Test checkout command with -f flag."""
+        with mock.patch.object(sys, "argv", ["acp", "checkout", "-f", "main"]):
+            acp.main()
+            mock_checkout.assert_called_once_with("main", fetch=True)
 
     def test_checkout_no_branch(self, capsys):
         """Test checkout without branch shows error."""
