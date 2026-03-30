@@ -4,7 +4,7 @@
 [![Python Tests](https://github.com/vbvictor/acp/actions/workflows/tests.yaml/badge.svg)](https://github.com/vbvictor/acp/actions/workflows/tests.yaml)
 [![Code Lint](https://github.com/vbvictor/acp/actions/workflows/code-lint.yaml/badge.svg)](https://github.com/vbvictor/acp/actions/workflows/code-lint.yaml)
 [![Code Format](https://github.com/vbvictor/acp/actions/workflows/code-format.yaml/badge.svg)](https://github.com/vbvictor/acp/actions/workflows/code-format.yaml)
-[![Python Version](https://img.shields.io/badge/python-3.9%2B-blue)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-GPLv2-blue.svg)](https://github.com/vbvictor/acp/blob/main/LICENSE)
 
 Turn your staged changes into a GitHub pull request with a single command. \
@@ -34,7 +34,7 @@ The tool can also merge freshly created PR via `--merge` or `--auto-merge` optio
 
 ## Getting Started
 
-**Prerequisites:** [Python 3.9+][python], [Git][git], and [GitHub CLI (gh)][gh]
+**Prerequisites:** [Python 3.10+][python], [Git][git], and [GitHub CLI (gh)][gh]
 
 Authenticate GitHub CLI (if you haven't already):
 
