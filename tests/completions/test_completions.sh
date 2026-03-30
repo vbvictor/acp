@@ -100,16 +100,17 @@ assert_not_has "$completions" ".py" "acp checkout <TAB> (no files)"
 assert_not_has "$completions" "--merge" "acp checkout <TAB> (no pr options)"
 assert_not_has "$completions" "--verbose" "acp checkout <TAB> (no pr options)"
 assert_not_has "$completions" "--add" "acp checkout <TAB> (no pr options)"
-[ -z "$completions" ] || fail "acp checkout <TAB>: expected empty, got '$completions'"
-pass "acp checkout <TAB>: no completions (expects branch name)"
+pass "acp checkout <TAB>: no file or pr option completions"
 
-# "acp checkout -<TAB>" should NOT show pr options
+# "acp checkout -<TAB>" should show checkout options, not pr options
 completions=$(get_completions "acp checkout -")
+assert_has "$completions" "--fetch" "acp checkout -<TAB>"
+assert_has "$completions" "-f" "acp checkout -<TAB>"
 assert_not_has "$completions" "--merge" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--verbose" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--add" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--reviewers" "acp checkout -<TAB> (no pr options)"
-pass "acp checkout -<TAB>: no pr options leak"
+pass "acp checkout -<TAB>: shows checkout options, no pr options leak"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"
