@@ -9,7 +9,7 @@ ACP (Automatic Commit Pusher) is a Python CLI tool that creates GitHub pull
 requests from staged changes in a single command. It handles branch creation,
 committing, pushing, and PR creation automatically.
 
-**Requirements**: Python 3.9+, Git CLI, GitHub CLI (`gh`)
+**Requirements**: Python 3.10+, Git CLI, GitHub CLI (`gh`)
 
 ## Common Commands
 
@@ -74,7 +74,7 @@ The tool automatically detects fork vs non-fork repos and adjusts PR target.
 
 All workflows in `.github/workflows/`:
 
-- **tests.yaml** - pytest across Python 3.9-3.13
+- **tests.yaml** - pytest across Python 3.10-3.13
 - **code-lint.yaml** - Ruff linting
 - **code-format.yaml** - Black formatting check
 
