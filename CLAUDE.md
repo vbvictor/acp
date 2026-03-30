@@ -15,7 +15,7 @@ committing, pushing, and PR creation automatically.
 
 ```bash
 # Setup dev environment (creates venv and installs dependencies)
-make setup
+make activate
 
 # Run tests
 make test
@@ -23,8 +23,8 @@ make test
 # Run single test
 venv/bin/pytest test_acp.py::TestClassName::test_method_name -v
 
-# Run with coverage
-venv/bin/pytest test_acp.py --cov=acp --cov-report=term-missing
+# Run completion tests (in Docker, use when modifying CLI options)
+make test-completions
 
 # Linting
 make lint
@@ -39,6 +39,8 @@ make clean
 ## Workflow
 
 Always run `make lint` and `make test` before presenting results to the user.
+
+When adding or modifying CLI options/flags, also run `make test-completions`.
 
 To create a pull request: `acp pr -a "feat: add <description>"` (the `-a` flag stages all changes automatically).
 
