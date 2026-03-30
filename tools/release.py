@@ -47,7 +47,7 @@ def get_current_version():
     """Get current version from pyproject.toml."""
     toml_path = Path("pyproject.toml")
     content = toml_path.read_text()
-    match = re.search(r'version = "([^"]+)"', content)
+    match = re.search(r'^version = "([^"]+)"', content, flags=re.MULTILINE)
     if match:
         return match.group(1)
     return None
@@ -58,7 +58,13 @@ def update_pyproject_toml(version):
     toml_path = Path("pyproject.toml")
     content = toml_path.read_text()
 
-    new_content = re.sub(r'version = "[^"]+"', f'version = "{version}"', content)
+    new_content = re.sub(
+        r'^version = "[^"]+"',
+        f'version = "{version}"',
+        content,
+        count=1,
+        flags=re.MULTILINE,
+    )
 
     toml_path.write_text(new_content)
     print(f'Updated pyproject.toml: version = "{version}"')
