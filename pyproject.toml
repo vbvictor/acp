@@ -90,3 +90,7 @@ ignore = [
     "BLE001",  # blind except - intentional in error recovery to switch back to original branch
     "C901",    # complexity - orchestration functions are inherently complex
 ]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true

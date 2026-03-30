@@ -8,13 +8,14 @@ import argparse
 import random
 import subprocess
 import sys
+from typing import Any
 
 import argcomplete
 
 __version__ = "1.4.0"
 
 
-def run(cmd, quiet=False):
+def run(cmd: list[str], quiet: bool = False) -> str:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         print(f"Error: {result.stderr}", file=sys.stderr)
@@ -22,12 +23,12 @@ def run(cmd, quiet=False):
     return result.stdout.strip()
 
 
-def run_check(cmd):
+def run_check(cmd: list[str]) -> bool:
     result = subprocess.run(cmd, capture_output=True, text=True)
     return result.returncode == 0
 
 
-def run_interactive(cmd):
+def run_interactive(cmd: list[str]) -> None:
     """Run a command interactively, filtering out GitHub 'remote:' messages from stderr."""
     import os
     import sys
@@ -75,7 +76,7 @@ def run_interactive(cmd):
         sys.exit(1)
 
 
-def parse_github_url(url):
+def parse_github_url(url: str) -> str | None:
     """Parse GitHub URL (SSH or HTTPS) and extract owner/repo.
 
     - SSH: git@github.com:owner/repo.git
@@ -90,7 +91,13 @@ def parse_github_url(url):
     return "/".join(url.split("/")[-2:]).replace(".git", "")
 
 
-def validate_merge_options(interactive, merge, auto_merge, merge_method, draft=False):
+def validate_merge_options(
+    interactive: bool,
+    merge: bool,
+    auto_merge: bool,
+    merge_method: str,
+    draft: bool = False,
+) -> None:
     if interactive and (merge or auto_merge):
         print(
             "Error: Cannot use --merge or --auto-merge with --interactive mode",
@@ -121,7 +128,7 @@ def validate_merge_options(interactive, merge, auto_merge, merge_method, draft=F
         sys.exit(1)
 
 
-def get_repo_info(verbose):
+def get_repo_info(verbose: bool) -> tuple[str, str, bool]:
     """Returns tuple: (fork_repo, upstream_repo, is_fork)"""
     origin_url = run(["git", "remote", "get-url", "origin"], quiet=True)
     fork_repo = parse_github_url(origin_url)
@@ -150,7 +157,7 @@ def get_repo_info(verbose):
     return fork_repo, upstream_repo, is_fork
 
 
-def generate_temp_branch_name(verbose):
+def generate_temp_branch_name(verbose: bool) -> str:
     gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
     random_num = random.randint(1000000000000000, 9999999999999999)
     temp_branch = f"acp/{gh_user}/{random_num}"
@@ -161,7 +168,9 @@ def generate_temp_branch_name(verbose):
     return temp_branch
 
 
-def build_compare_url(upstream_repo, fork_repo, temp_branch, is_fork):
+def build_compare_url(
+    upstream_repo: str, fork_repo: str, temp_branch: str, is_fork: bool
+) -> str:
     if is_fork:
         return f"https://github.com/{fork_repo}/pull/new/{temp_branch}"
     else:
@@ -169,16 +178,16 @@ def build_compare_url(upstream_repo, fork_repo, temp_branch, is_fork):
 
 
 def create_github_pr(
-    upstream_repo,
-    fork_repo,
-    temp_branch,
-    commit_message,
-    body,
-    is_fork,
-    verbose,
-    reviewers=None,
-    draft=False,
-):
+    upstream_repo: str,
+    fork_repo: str,
+    temp_branch: str,
+    commit_message: str,
+    body: str,
+    is_fork: bool,
+    verbose: bool,
+    reviewers: str | None = None,
+    draft: bool = False,
+) -> str:
     if verbose:
         print(f"Creating PR to: '{upstream_repo}'...")
 
@@ -199,7 +208,7 @@ def create_github_pr(
 
     # For forks, specify head as "username:branch"
     if is_fork:
-        fork_owner = fork_repo.split("/")[0]
+        fork_owner = fork_repo.split("/", maxsplit=1)[0]
         gh_cmd.extend(["--head", f"{fork_owner}:{temp_branch}"])
     else:
         gh_cmd.extend(["--head", temp_branch])
@@ -215,7 +224,7 @@ def create_github_pr(
     return pr_url
 
 
-def check_remote_branch_exists(upstream_repo, temp_branch):
+def check_remote_branch_exists(upstream_repo: str, temp_branch: str) -> bool:
     check_result = subprocess.run(
         ["gh", "api", f"repos/{upstream_repo}/git/refs/heads/{temp_branch}"],
         capture_output=True,
@@ -224,7 +233,7 @@ def check_remote_branch_exists(upstream_repo, temp_branch):
     return check_result.returncode == 0
 
 
-def delete_local_branch(temp_branch, verbose):
+def delete_local_branch(temp_branch: str, verbose: bool) -> None:
     """Delete local temporary branch and its remote tracking reference."""
     local_check = subprocess.run(
         ["git", "rev-parse", "--verify", temp_branch],
@@ -279,7 +288,7 @@ def delete_local_branch(temp_branch, verbose):
                 )
 
 
-def delete_remote_branch(upstream_repo, temp_branch, verbose):
+def delete_remote_branch(upstream_repo: str, temp_branch: str, verbose: bool) -> None:
     if verbose:
         print(f"Deleting remote branch '{temp_branch}'...")
 
@@ -304,7 +313,9 @@ def delete_remote_branch(upstream_repo, temp_branch, verbose):
         print(f"Remote branch '{temp_branch}' deleted")
 
 
-def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
+def cleanup_branches_after_merge(
+    upstream_repo: str, temp_branch: str, verbose: bool
+) -> None:
     """Clean up both remote and local branches after PR merge.
 
     Makes a single API call to check remote branch status, then:
@@ -326,15 +337,15 @@ def cleanup_branches_after_merge(upstream_repo, temp_branch, verbose):
 
 
 def merge_pr(
-    pr_url,
-    commit_message,
-    merge_method,
-    upstream_repo,
-    temp_branch,
-    verbose,
-    sync,
-    original_branch,
-):
+    pr_url: str,
+    commit_message: str,
+    merge_method: str,
+    upstream_repo: str,
+    temp_branch: str,
+    verbose: bool,
+    sync: bool,
+    original_branch: str,
+) -> None:
     """Merge a PR immediately after creation.
 
     Also attempts to delete the remote branch and local branch after merging.
@@ -380,7 +391,9 @@ def merge_pr(
             print(f"Branch '{original_branch}' synced successfully")
 
 
-def enable_auto_merge(pr_url, commit_message, merge_method, verbose):
+def enable_auto_merge(
+    pr_url: str, commit_message: str, merge_method: str, verbose: bool
+) -> None:
     if verbose:
         print(f"Enabling auto-merge (method: {merge_method})...")
 
@@ -403,7 +416,7 @@ def enable_auto_merge(pr_url, commit_message, merge_method, verbose):
     print(f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass')
 
 
-def show_help():
+def show_help() -> None:
     print("usage: acp pr <commit message> [pr options]")
     print("       acp checkout <branch> [checkout options]")
     print("       acp branches")
@@ -458,7 +471,7 @@ def show_help():
     print('  acp pr "feat: new feature" -r vbvictor,octodad')
 
 
-def strip_branch_prefix(branch):
+def strip_branch_prefix(branch: str) -> str:
     """Strip the 'username:' prefix from a branch name.
 
     GitHub displays fork branches as 'username:branch-name'.
@@ -468,7 +481,7 @@ def strip_branch_prefix(branch):
     return branch
 
 
-def is_github_user(username):
+def is_github_user(username: str) -> bool:
     result = subprocess.run(
         ["gh", "api", f"users/{username}"],
         capture_output=True,
@@ -477,7 +490,7 @@ def is_github_user(username):
     return result.returncode == 0
 
 
-def list_branches(show_all=False):
+def list_branches(show_all: bool = False) -> None:
     """List ACP branches with linked PR titles.
 
     By default, only shows branches with linked PRs.
@@ -498,7 +511,7 @@ def list_branches(show_all=False):
     else:
         patterns = ["*/acp/*", f"*/{gh_user}/acp/*"]
 
-    branches = []
+    branches: list[str] = []
     for pattern in patterns:
         result = subprocess.run(
             ["git", "branch", "-r", "--list", pattern],
@@ -531,7 +544,7 @@ def list_branches(show_all=False):
         text=True,
     )
 
-    pr_map = {}
+    pr_map: dict[str, Any] = {}
     if pr_result.returncode == 0 and pr_result.stdout.strip():
         for pr in json.loads(pr_result.stdout):
             pr_map[pr["headRefName"]] = pr
@@ -557,7 +570,7 @@ def list_branches(show_all=False):
             print(f"  {branch_name}")
 
 
-def fetch_upstream_branch(branch):
+def fetch_upstream_branch(branch: str) -> None:
     remote = (
         "upstream" if run_check(["git", "remote", "get-url", "upstream"]) else "origin"
     )
@@ -565,7 +578,7 @@ def fetch_upstream_branch(branch):
         run_check(["git", "merge", "--ff-only", f"{remote}/{branch}"])
 
 
-def checkout_branch(branch, fetch=False):
+def checkout_branch(branch: str, fetch: bool = False) -> None:
     if ":" in branch:
         prefix, rest = branch.split(":", 1)
         if is_github_user(prefix):
@@ -580,18 +593,18 @@ def checkout_branch(branch, fetch=False):
 
 
 def create_pr(
-    commit_message,
-    verbose=False,
-    body="",
-    interactive=False,
-    merge=False,
-    auto_merge=False,
-    merge_method="squash",
-    sync=False,
-    add=False,
-    reviewers=None,
-    draft=False,
-):
+    commit_message: str,
+    verbose: bool = False,
+    body: str = "",
+    interactive: bool = False,
+    merge: bool = False,
+    auto_merge: bool = False,
+    merge_method: str = "squash",
+    sync: bool = False,
+    add: bool = False,
+    reviewers: str | None = None,
+    draft: bool = False,
+) -> None:
     validate_merge_options(interactive, merge, auto_merge, merge_method, draft)
 
     if add:
@@ -739,14 +752,14 @@ def create_pr(
 class _NoFilesCompleter:
     suppress = True
 
-    def __call__(self, **kwargs):
+    def __call__(self, **kwargs: Any) -> list[str]:
         return []
 
 
 _no_files = _NoFilesCompleter()
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         prog="acp",
         usage="acp <command> [options]",
@@ -759,7 +772,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     pr_parser = subparsers.add_parser("pr", add_help=False)
-    pr_parser.add_argument("message", nargs="?", help=argparse.SUPPRESS).completer = (
+    pr_parser.add_argument("message", nargs="?", help=argparse.SUPPRESS).completer = (  # type: ignore[attr-defined]
         _no_files
     )
     pr_parser.add_argument(
@@ -815,7 +828,7 @@ def main():
     checkout_parser = subparsers.add_parser("checkout", add_help=False)
     checkout_parser.add_argument(
         "branch", nargs="?", help=argparse.SUPPRESS
-    ).completer = _no_files
+    ).completer = _no_files  # type: ignore[attr-defined]
     checkout_parser.add_argument(
         "-f",
         "--fetch",
@@ -831,7 +844,7 @@ def main():
         help="Show all ACP branches on upstream remote",
     )
 
-    argcomplete.autocomplete(parser, default_completer=_no_files)
+    argcomplete.autocomplete(parser, default_completer=_no_files)  # type: ignore[arg-type]
     args = parser.parse_args()
 
     if args.version:
