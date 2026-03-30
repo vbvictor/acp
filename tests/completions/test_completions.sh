@@ -51,6 +51,7 @@ if register-python-argcomplete --shell fish acp | fish -n; then pass "Fish synta
 completions=$(get_completions "acp ")
 assert_has "$completions" "pr" "acp <TAB>"
 assert_has "$completions" "checkout" "acp <TAB>"
+assert_has "$completions" "branches" "acp <TAB>"
 assert_not_has "$completions" ".py" "acp <TAB> (no files)"
 pass "acp <TAB>: shows subcommands, no files"
 
@@ -111,6 +112,18 @@ assert_not_has "$completions" "--verbose" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--add" "acp checkout -<TAB> (no pr options)"
 assert_not_has "$completions" "--reviewers" "acp checkout -<TAB> (no pr options)"
 pass "acp checkout -<TAB>: shows checkout options, no pr options leak"
+
+# =============================================================================
+# Branches subcommand: "acp branches -<TAB>" should show branches options
+# =============================================================================
+
+completions=$(get_completions "acp branches -")
+assert_has "$completions" "--all" "acp branches -<TAB>"
+assert_has "$completions" "-a" "acp branches -<TAB>"
+assert_not_has "$completions" "--merge" "acp branches -<TAB> (no pr options)"
+assert_not_has "$completions" "--verbose" "acp branches -<TAB> (no pr options)"
+assert_not_has "$completions" "--fetch" "acp branches -<TAB> (no checkout options)"
+pass "acp branches -<TAB>: shows branches options, no other options leak"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"

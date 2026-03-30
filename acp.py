@@ -506,12 +506,19 @@ def show_help():
     """Show help message."""
     print("usage: acp pr <commit message> [pr options]")
     print("       acp checkout <branch> [checkout options]")
+    print("       acp branches")
     print()
     print("Commands:")
     print("  pr <message>                Create a PR with staged changes")
     print(
         "  checkout <branch>           Checkout a branch, stripping 'user:' prefix if present"
     )
+    print(
+        "  branches                    List ACP branches with linked PRs (use -a for all)"
+    )
+    print()
+    print("Branches Options:")
+    print("  -a, --all                   Show all ACP branches on upstream remote")
     print()
     print("Checkout Options:")
     print(
@@ -569,6 +576,92 @@ def is_github_user(username):
         text=True,
     )
     return result.returncode == 0
+
+
+def list_branches(show_all=False):
+    """List ACP branches with linked PR titles.
+
+    By default, only shows branches with linked PRs (from all remotes).
+    With show_all=True, shows all ACP branches on upstream remote.
+    """
+    import json
+
+    # Get current GitHub username for matching <user>/acp/* branches
+    gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+
+    # With --all, scope to upstream remote only; otherwise search all remotes
+    if show_all:
+        remote = (
+            "upstream"
+            if run_check(["git", "remote", "get-url", "upstream"])
+            else "origin"
+        )
+        # Prune stale remote-tracking refs before listing
+        run_check(["git", "fetch", "--prune", remote])
+        patterns = [f"{remote}/acp/*", f"{remote}/{gh_user}/acp/*"]
+    else:
+        patterns = ["*/acp/*", f"*/{gh_user}/acp/*"]
+
+    branches = []
+    for pattern in patterns:
+        result = subprocess.run(
+            ["git", "branch", "-r", "--list", pattern],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            print(f"Error: {result.stderr}", file=sys.stderr)
+            sys.exit(1)
+        for line in result.stdout.strip().splitlines():
+            branch = line.strip()
+            if " -> " in branch:
+                continue
+            if branch not in branches:
+                branches.append(branch)
+
+    # Get open PRs
+    pr_result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--state",
+            "open",
+            "--json",
+            "headRefName,title,number,url",
+            "--limit",
+            "100",
+        ],
+        capture_output=True,
+        text=True,
+    )
+
+    pr_map = {}
+    if pr_result.returncode == 0 and pr_result.stdout.strip():
+        for pr in json.loads(pr_result.stdout):
+            pr_map[pr["headRefName"]] = pr
+
+    if not show_all:
+        # Filter to only branches with linked PRs
+        branches = [
+            b for b in branches if (b.split("/", 1)[1] if "/" in b else b) in pr_map
+        ]
+
+    if not branches:
+        if show_all:
+            print("No ACP branches found on upstream.")
+        else:
+            print("No ACP branches with linked PRs found.")
+        return
+
+    for branch in branches:
+        # Strip remote prefix (e.g. "origin/acp/..." -> "acp/...")
+        branch_name = branch.split("/", 1)[1] if "/" in branch else branch
+        pr = pr_map.get(branch_name)
+        if pr:
+            print(f"  {branch_name} -> #{pr['number']} {pr['title']}")
+        else:
+            print(f"  {branch_name}")
 
 
 def fetch_upstream_branch(branch):
@@ -867,6 +960,15 @@ def main():
         help="Fetch and fast-forward branch from upstream after checkout",
     )
 
+    # branches subcommand
+    branches_parser = subparsers.add_parser("branches", add_help=False)
+    branches_parser.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        help="Show all ACP branches on upstream remote",
+    )
+
     argcomplete.autocomplete(parser, default_completer=_no_files)
     args = parser.parse_args()
 
@@ -879,7 +981,9 @@ def main():
         sys.exit(0)
 
     try:
-        if args.command == "checkout":
+        if args.command == "branches":
+            list_branches(show_all=args.all)
+        elif args.command == "checkout":
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)
                 sys.exit(1)
