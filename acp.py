@@ -505,12 +505,17 @@ def enable_auto_merge(pr_url, commit_message, merge_method, verbose):
 def show_help():
     """Show help message."""
     print("usage: acp pr <commit message> [pr options]")
-    print("       acp checkout <branch>")
+    print("       acp checkout <branch> [checkout options]")
     print()
     print("Commands:")
     print("  pr <message>                Create a PR with staged changes")
     print(
         "  checkout <branch>           Checkout a branch, stripping 'user:' prefix if present"
+    )
+    print()
+    print("Checkout Options:")
+    print(
+        "  -f, --fetch                 Fetch and fast-forward branch from upstream after checkout"
     )
     print()
     print("PR Options:")
@@ -566,15 +571,29 @@ def is_github_user(username):
     return result.returncode == 0
 
 
-def checkout_branch(branch):
+def fetch_upstream_branch(branch):
+    """Fetch branch from upstream (or origin) to keep it up-to-date."""
+    # Determine the remote to fetch from: prefer upstream, fall back to origin
+    remote = (
+        "upstream" if run_check(["git", "remote", "get-url", "upstream"]) else "origin"
+    )
+    if run_check(["git", "fetch", remote, branch]):
+        run_check(["git", "merge", "--ff-only", f"{remote}/{branch}"])
+
+
+def checkout_branch(branch, fetch=False):
     """Checkout a branch, stripping any 'username:' prefix if needed."""
     if ":" in branch:
         prefix, rest = branch.split(":", 1)
         if is_github_user(prefix):
             run(["git", "checkout", rest])
+            if fetch:
+                fetch_upstream_branch(rest)
             return
 
     run(["git", "checkout", branch])
+    if fetch:
+        fetch_upstream_branch(branch)
 
 
 def create_pr(
@@ -841,6 +860,12 @@ def main():
     checkout_parser.add_argument(
         "branch", nargs="?", help=argparse.SUPPRESS
     ).completer = _no_files
+    checkout_parser.add_argument(
+        "-f",
+        "--fetch",
+        action="store_true",
+        help="Fetch and fast-forward branch from upstream after checkout",
+    )
 
     argcomplete.autocomplete(parser, default_completer=_no_files)
     args = parser.parse_args()
@@ -858,7 +883,7 @@ def main():
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)
                 sys.exit(1)
-            checkout_branch(args.branch)
+            checkout_branch(args.branch, fetch=args.fetch)
         elif args.command == "pr":
             if not args.message:
                 print("Error: Commit message required for pr", file=sys.stderr)
