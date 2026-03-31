@@ -420,6 +420,7 @@ def show_help() -> None:
     print("usage: acp pr <commit message> [pr options]")
     print("       acp checkout <branch> [checkout options]")
     print("       acp branches")
+    print("       acp sync [sync options]")
     print()
     print("Commands:")
     print("  pr <message>                Create a PR with staged changes")
@@ -429,9 +430,14 @@ def show_help() -> None:
     print(
         "  branches                    List ACP branches with linked PRs (use -a for all)"
     )
+    print("  sync                        Sync fork with upstream repository")
     print()
     print("Branches Options:")
     print("  -a, --all                   Show all ACP branches on upstream remote")
+    print()
+    print("Sync Options:")
+    print("  -b, --branch <name>         Branch to sync (default: main)")
+    print("  -v, --verbose               Show detailed output")
     print()
     print("Checkout Options:")
     print(
@@ -568,6 +574,59 @@ def list_branches(show_all: bool = False) -> None:
             print(f"  {branch_name} -> #{pr['number']} {pr['title']}")
         else:
             print(f"  {branch_name}")
+
+
+def sync_fork(branch: str = "main", verbose: bool = False) -> None:
+    """Sync fork's branch with upstream repository."""
+    fork_repo, _upstream_repo, is_fork = get_repo_info(verbose)
+
+    if not is_fork:
+        print("No upstream detected. Sync is only available for forked repositories.")
+        sys.exit(0)
+
+    if verbose:
+        print(f"Syncing fork '{fork_repo}' branch '{branch}' with upstream...")
+
+    sync_result = subprocess.run(
+        ["gh", "repo", "sync", fork_repo, "-b", branch],
+        capture_output=True,
+        text=True,
+    )
+
+    if sync_result.returncode != 0:
+        print(
+            f"Error: Failed to sync fork: {sync_result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    if verbose:
+        print("Fork synced on GitHub")
+
+    current_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
+
+    run(["git", "fetch", "origin", branch], quiet=True)
+
+    if current_branch == branch:
+        merge_result = subprocess.run(
+            ["git", "merge", "--ff-only", f"origin/{branch}"],
+            capture_output=True,
+            text=True,
+        )
+        if merge_result.returncode != 0:
+            print(
+                f"Warning: Could not fast-forward local '{branch}': {merge_result.stderr.strip()}",
+                file=sys.stderr,
+            )
+        elif verbose:
+            print(f"Local branch '{branch}' updated")
+    elif verbose:
+        print(
+            f"Not on '{branch}' branch, skipping local update. "
+            f"Run 'git pull origin {branch}' when on '{branch}'."
+        )
+
+    print(f"Fork synced with upstream ({branch})")
 
 
 def fetch_upstream_branch(branch: str) -> None:
@@ -836,6 +895,18 @@ def main() -> None:
         help="Fetch and fast-forward branch from upstream after checkout",
     )
 
+    sync_parser = subparsers.add_parser("sync", add_help=False)
+    sync_parser.add_argument(
+        "-b",
+        "--branch",
+        type=str,
+        default="main",
+        help="Branch to sync (default: main)",
+    )
+    sync_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
     branches_parser = subparsers.add_parser("branches", add_help=False)
     branches_parser.add_argument(
         "-a",
@@ -856,7 +927,9 @@ def main() -> None:
         sys.exit(0)
 
     try:
-        if args.command == "branches":
+        if args.command == "sync":
+            sync_fork(branch=args.branch, verbose=args.verbose)
+        elif args.command == "branches":
             list_branches(show_all=args.all)
         elif args.command == "checkout":
             if not args.branch:

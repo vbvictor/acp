@@ -1494,6 +1494,221 @@ class TestListBranches:
         assert "HEAD" not in output
 
 
+class TestSyncFork:
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_not_a_fork(self, mock_run, mock_subprocess, capsys):
+        mock_run.return_value = "git@github.com:user/repo.git"
+        mock_subprocess.return_value = mock.Mock(returncode=1, stdout="", stderr="")
+
+        with pytest.raises(SystemExit) as exc:
+            acp.sync_fork()
+        assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        assert "No upstream detected" in captured.out
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_success_on_target_branch(
+        self, mock_run, mock_subprocess, capsys
+    ):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+            "main",  # current branch
+            None,  # git fetch
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            if "gh" in str(cmd) and "repo" in str(cmd) and "sync" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            if "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        acp.sync_fork(branch="main")
+
+        captured = capsys.readouterr()
+        assert "Fork synced with upstream (main)" in captured.out
+
+        sync_calls = [
+            c
+            for c in mock_subprocess.call_args_list
+            if "sync" in str(c[0][0]) and "gh" in str(c[0][0])
+        ]
+        assert len(sync_calls) == 1
+        assert "user/fork" in str(sync_calls[0])
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_success_on_different_branch(
+        self, mock_run, mock_subprocess, capsys
+    ):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+            "feature-branch",  # current branch (not main)
+            None,  # git fetch
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            if "gh" in str(cmd) and "repo" in str(cmd) and "sync" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        acp.sync_fork(branch="main")
+
+        captured = capsys.readouterr()
+        assert "Fork synced with upstream (main)" in captured.out
+
+        merge_calls = [
+            c for c in mock_subprocess.call_args_list if "merge" in str(c[0][0])
+        ]
+        assert len(merge_calls) == 0
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_gh_sync_failure(self, mock_run, mock_subprocess, capsys):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            if "gh" in str(cmd) and "repo" in str(cmd) and "sync" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="sync failed")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        with pytest.raises(SystemExit) as exc:
+            acp.sync_fork(branch="main")
+        assert exc.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Failed to sync fork" in captured.err
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_custom_branch(self, mock_run, mock_subprocess, capsys):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+            "develop",  # current branch
+            None,  # git fetch
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            if "gh" in str(cmd) and "repo" in str(cmd) and "sync" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            if "merge" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        acp.sync_fork(branch="develop")
+
+        captured = capsys.readouterr()
+        assert "Fork synced with upstream (develop)" in captured.out
+
+        sync_calls = [
+            c
+            for c in mock_subprocess.call_args_list
+            if "sync" in str(c[0][0]) and "gh" in str(c[0][0])
+        ]
+        assert "-b" in str(sync_calls[0])
+        assert "develop" in str(sync_calls[0])
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_ff_merge_failure_warns(self, mock_run, mock_subprocess, capsys):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+            "main",  # current branch
+            None,  # git fetch
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            if "gh" in str(cmd) and "repo" in str(cmd) and "sync" in str(cmd):
+                return mock.Mock(returncode=0, stdout="", stderr="")
+            if "merge" in str(cmd):
+                return mock.Mock(
+                    returncode=1, stdout="", stderr="not possible to fast-forward"
+                )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        acp.sync_fork(branch="main")
+
+        captured = capsys.readouterr()
+        assert "Could not fast-forward" in captured.err
+        assert "Fork synced with upstream (main)" in captured.out
+
+
+class TestSyncCommand:
+    @mock.patch("acp.sync_fork")
+    def test_sync_command_default(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "sync"]):
+            acp.main()
+            mock_sync.assert_called_once_with(branch="main", verbose=False)
+
+    @mock.patch("acp.sync_fork")
+    def test_sync_command_custom_branch(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "sync", "-b", "develop"]):
+            acp.main()
+            mock_sync.assert_called_once_with(branch="develop", verbose=False)
+
+    @mock.patch("acp.sync_fork")
+    def test_sync_command_custom_branch_long(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "sync", "--branch", "develop"]):
+            acp.main()
+            mock_sync.assert_called_once_with(branch="develop", verbose=False)
+
+    @mock.patch("acp.sync_fork")
+    def test_sync_command_verbose(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "sync", "-v"]):
+            acp.main()
+            mock_sync.assert_called_once_with(branch="main", verbose=True)
+
+
 class TestBranchesCommand:
     @mock.patch("acp.list_branches")
     def test_branches_command(self, mock_list):
