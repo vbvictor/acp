@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-
+import json
 import subprocess
 import sys
 from unittest import mock
@@ -274,9 +273,9 @@ class TestCreatePR:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+            if "api" in str(cmd) and "DELETE" not in str(cmd):
                 api_check_count["count"] += 1
                 if api_check_count["count"] == 1:
                     return mock.Mock(
@@ -284,15 +283,14 @@ class TestCreatePR:
                         stdout='{"ref": "refs/heads/acp/testuser/123"}',
                         stderr="",
                     )
-                else:
-                    return mock.Mock(returncode=1, stdout="", stderr="Not Found")
-            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="Not Found")
+            if "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "rev-parse" in str(cmd) and "--verify" in str(cmd):
+            if "rev-parse" in str(cmd) and "--verify" in str(cmd):
                 return mock.Mock(returncode=0, stdout="abc123", stderr="")
-            elif "branch" in str(cmd) and "-D" in str(cmd):
+            if "branch" in str(cmd) and "-D" in str(cmd):
                 return mock.Mock(returncode=0, stdout="Deleted branch", stderr="")
-            elif "branch" in str(cmd) and "-rd" in str(cmd):
+            if "branch" in str(cmd) and "-rd" in str(cmd):
                 return mock.Mock(
                     returncode=0, stdout="Deleted remote-tracking branch", stderr=""
                 )
@@ -362,7 +360,7 @@ class TestCreatePR:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -418,9 +416,9 @@ class TestCreatePR:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+            if "api" in str(cmd) and "DELETE" not in str(cmd):
                 api_check_count["count"] += 1
                 if api_check_count["count"] == 1:
                     return mock.Mock(
@@ -428,15 +426,14 @@ class TestCreatePR:
                         stdout='{"ref": "refs/heads/acp/testuser/123"}',
                         stderr="",
                     )
-                else:
-                    return mock.Mock(returncode=1, stdout="", stderr="Not Found")
-            elif "api" in str(cmd) and "DELETE" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="Not Found")
+            if "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "rev-parse" in str(cmd) and "--verify" in str(cmd):
+            if "rev-parse" in str(cmd) and "--verify" in str(cmd):
                 return mock.Mock(returncode=0, stdout="abc123", stderr="")
-            elif "branch" in str(cmd) and "-D" in str(cmd):
+            if "branch" in str(cmd) and "-D" in str(cmd):
                 return mock.Mock(returncode=0, stdout="Deleted branch", stderr="")
-            elif "branch" in str(cmd) and "-rd" in str(cmd):
+            if "branch" in str(cmd) and "-rd" in str(cmd):
                 return mock.Mock(
                     returncode=0, stdout="Deleted remote-tracking branch", stderr=""
                 )
@@ -479,13 +476,13 @@ class TestCreatePR:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(
                     returncode=1,
                     stdout="",
                     stderr="GraphQL: Merge commits are not allowed on this repository",
                 )
-            elif "api" in str(cmd) and "DELETE" in str(cmd):
+            if "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -525,7 +522,7 @@ class TestCreatePR:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd) and "--auto" in cmd:
+            if "merge" in str(cmd) and "--auto" in cmd:
                 return mock.Mock(
                     returncode=1,
                     stdout="",
@@ -898,15 +895,15 @@ class TestMain:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+            if "api" in str(cmd) and "DELETE" not in str(cmd):
                 return mock.Mock(
                     returncode=0,
                     stdout='{"ref": "refs/heads/acp/testuser/123"}',
                     stderr="",
                 )
-            elif "api" in str(cmd) and "DELETE" in str(cmd):
+            if "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -942,15 +939,15 @@ class TestMain:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+            if "api" in str(cmd) and "DELETE" not in str(cmd):
                 return mock.Mock(
                     returncode=0,
                     stdout='{"ref": "refs/heads/acp/testuser/123"}',
                     stderr="",
                 )
-            elif "api" in str(cmd) and "DELETE" in str(cmd):
+            if "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -1028,7 +1025,7 @@ class TestMain:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "stash" in str(cmd) and "pop" in str(cmd):
+            if "stash" in str(cmd) and "pop" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -1078,7 +1075,7 @@ class TestMain:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "stash" in str(cmd) and "pop" in str(cmd):
+            if "stash" in str(cmd) and "pop" in str(cmd):
                 return mock.Mock(
                     returncode=1,
                     stdout="",
@@ -1119,11 +1116,11 @@ class TestMain:
             cmd = args[0]
             if "upstream" in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="")
-            elif "merge" in str(cmd):
+            if "merge" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
-            elif "api" in str(cmd) and "DELETE" not in str(cmd):
+            if "api" in str(cmd) and "DELETE" not in str(cmd):
                 return mock.Mock(returncode=1, stdout="", stderr="Not Found")
-            elif "api" in str(cmd) and "DELETE" in str(cmd):
+            if "api" in str(cmd) and "DELETE" in str(cmd):
                 return mock.Mock(returncode=0, stdout="", stderr="")
             return mock.Mock(returncode=0, stdout="", stderr="")
 
@@ -1185,6 +1182,7 @@ class TestIsGithubUser:
             ["gh", "api", "users/vbvictor"],
             capture_output=True,
             text=True,
+            check=False,
         )
 
     @mock.patch("subprocess.run")
@@ -1314,8 +1312,6 @@ class TestListBranches:
         )
 
     def _gh_pr_result(self, prs=None):
-        import json
-
         return subprocess.CompletedProcess(
             args=[],
             returncode=0,
@@ -1371,6 +1367,7 @@ class TestListBranches:
             ["git", "branch", "-r", "--list", "*/acp/*"],
             capture_output=True,
             text=True,
+            check=False,
         )
 
     @mock.patch("subprocess.run")
@@ -1414,6 +1411,7 @@ class TestListBranches:
             ["git", "branch", "-r", "--list", "upstream/acp/*"],
             capture_output=True,
             text=True,
+            check=False,
         )
 
     @mock.patch("subprocess.run")

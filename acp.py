@@ -5,9 +5,12 @@ A CLI tool to create GitHub pull requests from staged changes in one command.
 """
 
 import argparse
+import json
+import os
 import random
 import subprocess
 import sys
+import time
 from typing import Any
 
 import argcomplete
@@ -16,7 +19,7 @@ __version__ = "1.5.0"
 
 
 def run(cmd: list[str], quiet: bool = False) -> str:
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if result.returncode != 0:
         print(f"Error: {result.stderr}", file=sys.stderr)
         sys.exit(1)
@@ -24,15 +27,12 @@ def run(cmd: list[str], quiet: bool = False) -> str:
 
 
 def run_check(cmd: list[str]) -> bool:
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return result.returncode == 0
 
 
 def run_interactive(cmd: list[str]) -> None:
     """Run a command interactively, filtering out GitHub 'remote:' messages from stderr."""
-    import os
-    import sys
-
     read_fd, write_fd = os.pipe()
     process = subprocess.Popen(cmd, stderr=write_fd)
     os.close(write_fd)
@@ -138,7 +138,10 @@ def get_repo_info(verbose: bool) -> tuple[str, str, bool]:
         sys.exit(1)
 
     upstream_check = subprocess.run(
-        ["git", "remote", "get-url", "upstream"], capture_output=True, text=True
+        ["git", "remote", "get-url", "upstream"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
     if upstream_check.returncode == 0:
@@ -173,8 +176,7 @@ def build_compare_url(
 ) -> str:
     if is_fork:
         return f"https://github.com/{fork_repo}/pull/new/{temp_branch}"
-    else:
-        return f"https://github.com/{upstream_repo}/pull/new/{temp_branch}"
+    return f"https://github.com/{upstream_repo}/pull/new/{temp_branch}"
 
 
 def create_github_pr(
@@ -229,6 +231,7 @@ def check_remote_branch_exists(upstream_repo: str, temp_branch: str) -> bool:
         ["gh", "api", f"repos/{upstream_repo}/git/refs/heads/{temp_branch}"],
         capture_output=True,
         text=True,
+        check=False,
     )
     return check_result.returncode == 0
 
@@ -239,6 +242,7 @@ def delete_local_branch(temp_branch: str, verbose: bool) -> None:
         ["git", "rev-parse", "--verify", temp_branch],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if local_check.returncode == 0:
@@ -249,16 +253,16 @@ def delete_local_branch(temp_branch: str, verbose: bool) -> None:
             ["git", "branch", "-D", temp_branch],
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if delete_result.returncode == 0:
             if verbose:
                 print(f"Local branch '{temp_branch}' deleted")
-        else:
-            if verbose:
-                print(
-                    f"Warning: Could not delete local branch '{temp_branch}': {delete_result.stderr.strip()}"
-                )
+        elif verbose:
+            print(
+                f"Warning: Could not delete local branch '{temp_branch}': {delete_result.stderr.strip()}"
+            )
     elif verbose:
         print(f"Local branch '{temp_branch}' does not exist")
 
@@ -266,6 +270,7 @@ def delete_local_branch(temp_branch: str, verbose: bool) -> None:
         ["git", "rev-parse", "--verify", f"origin/{temp_branch}"],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if remote_tracking_check.returncode == 0:
@@ -276,16 +281,16 @@ def delete_local_branch(temp_branch: str, verbose: bool) -> None:
             ["git", "branch", "-rd", f"origin/{temp_branch}"],
             capture_output=True,
             text=True,
+            check=False,
         )
 
         if delete_tracking_result.returncode == 0:
             if verbose:
                 print(f"Remote tracking branch 'origin/{temp_branch}' deleted")
-        else:
-            if verbose:
-                print(
-                    f"Warning: Could not delete remote tracking branch: {delete_tracking_result.stderr.strip()}"
-                )
+        elif verbose:
+            print(
+                f"Warning: Could not delete remote tracking branch: {delete_tracking_result.stderr.strip()}"
+            )
 
 
 def delete_remote_branch(upstream_repo: str, temp_branch: str, verbose: bool) -> None:
@@ -302,6 +307,7 @@ def delete_remote_branch(upstream_repo: str, temp_branch: str, verbose: bool) ->
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if delete_result.returncode != 0:
@@ -359,6 +365,7 @@ def merge_pr(
         merge_cmd,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if merge_result.returncode != 0:
@@ -381,6 +388,7 @@ def merge_pr(
             ["git", "pull", "origin", original_branch],
             capture_output=True,
             text=True,
+            check=False,
         )
         if pull_result.returncode != 0:
             print(
@@ -402,6 +410,7 @@ def enable_auto_merge(
         merge_cmd,
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if merge_result.returncode != 0:
@@ -492,6 +501,7 @@ def is_github_user(username: str) -> bool:
         ["gh", "api", f"users/{username}"],
         capture_output=True,
         text=True,
+        check=False,
     )
     return result.returncode == 0
 
@@ -502,8 +512,6 @@ def list_branches(show_all: bool = False) -> None:
     By default, only shows branches with linked PRs.
     With show_all=True, shows all ACP branches on upstream remote.
     """
-    import json
-
     gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
 
     if show_all:
@@ -523,6 +531,7 @@ def list_branches(show_all: bool = False) -> None:
             ["git", "branch", "-r", "--list", pattern],
             capture_output=True,
             text=True,
+            check=False,
         )
         if result.returncode != 0:
             print(f"Error: {result.stderr}", file=sys.stderr)
@@ -548,6 +557,7 @@ def list_branches(show_all: bool = False) -> None:
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     pr_map: dict[str, Any] = {}
@@ -591,6 +601,7 @@ def sync_fork(branch: str = "main", verbose: bool = False) -> None:
         ["gh", "repo", "sync", fork_repo, "-b", branch],
         capture_output=True,
         text=True,
+        check=False,
     )
 
     if sync_result.returncode != 0:
@@ -612,6 +623,7 @@ def sync_fork(branch: str = "main", verbose: bool = False) -> None:
             ["git", "merge", "--ff-only", f"origin/{branch}"],
             capture_output=True,
             text=True,
+            check=False,
         )
         if merge_result.returncode != 0:
             print(
@@ -697,8 +709,6 @@ def create_pr(
         stash_id = None
 
         if has_unstaged:
-            import time
-
             timestamp = int(time.time())
             stash_id = f"acp-stash-{timestamp}"
 
@@ -715,7 +725,7 @@ def create_pr(
                 print("Restoring stashed changes...")
 
             stash_pop_result = subprocess.run(
-                ["git", "stash", "pop"], capture_output=True, text=True
+                ["git", "stash", "pop"], capture_output=True, text=True, check=False
             )
 
             if stash_pop_result.returncode != 0:
@@ -768,9 +778,8 @@ def create_pr(
                 )
             elif auto_merge:
                 enable_auto_merge(pr_url, commit_message, merge_method, verbose)
-            else:
-                if not verbose:
-                    print(f"PR created: {pr_url}")
+            elif not verbose:
+                print(f"PR created: {pr_url}")
 
     except Exception:
         try:
@@ -778,6 +787,7 @@ def create_pr(
                 ["git", "rev-parse", "--abbrev-ref", "HEAD"],
                 capture_output=True,
                 text=True,
+                check=False,
             ).stdout.strip()
 
             print("\nError occurred. Current state:", file=sys.stderr)
@@ -789,7 +799,9 @@ def create_pr(
                     file=sys.stderr,
                 )
                 subprocess.run(
-                    ["git", "checkout", original_branch], capture_output=True
+                    ["git", "checkout", original_branch],
+                    capture_output=True,
+                    check=False,
                 )
                 print(
                     f"  Successfully switched back to: '{original_branch}'",

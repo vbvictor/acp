@@ -80,13 +80,13 @@ ignore = [
     "S",       # security - this CLI tool is a subprocess wrapper, not a web app
     "T201",    # print() - this is a CLI tool, print is the UI
     "COM812",  # trailing commas - conflicts with black formatter
-    "EXE001",  # shebang - platform-specific
     "FBT",     # boolean args - would require enums/separate functions for simple internal helpers
     "ARG",     # unused args - some exist for API consistency (e.g. quiet param)
-    "PLC0415", # import inside function - intentional lazy imports for os, time, json
-    "PLR",     # pylint refactor - magic values (0, 1), complexity limits don't fit CLI orchestration
-    "PLW1510", # subprocess.run without check - we check returncode manually
-    "RET505",  # elif after return - if/elif dispatch chains are more readable
+    "PLR0912", # too many branches - orchestration functions are inherently complex
+    "PLR0913", # too many arguments - functions like create_pr() and merge_pr() legitimately need many params
+    "PLR0915", # too many statements - main() dispatch logic
+    "PLR0911", # too many return statements - test helper side_effect functions
+    "PLR2004", # magic value comparison - test assertions like `assert exc.value.code == 1`
     "BLE001",  # blind except - intentional in error recovery to switch back to original branch
     "C901",    # complexity - orchestration functions are inherently complex
 ]
