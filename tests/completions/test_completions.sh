@@ -52,6 +52,7 @@ completions=$(get_completions "acp ")
 assert_has "$completions" "pr" "acp <TAB>"
 assert_has "$completions" "checkout" "acp <TAB>"
 assert_has "$completions" "branches" "acp <TAB>"
+assert_has "$completions" "sync" "acp <TAB>"
 assert_not_has "$completions" ".py" "acp <TAB> (no files)"
 pass "acp <TAB>: shows subcommands, no files"
 
@@ -124,6 +125,20 @@ assert_not_has "$completions" "--merge" "acp branches -<TAB> (no pr options)"
 assert_not_has "$completions" "--verbose" "acp branches -<TAB> (no pr options)"
 assert_not_has "$completions" "--fetch" "acp branches -<TAB> (no checkout options)"
 pass "acp branches -<TAB>: shows branches options, no other options leak"
+
+# =============================================================================
+# Sync subcommand: "acp sync -<TAB>" should show sync options
+# =============================================================================
+
+completions=$(get_completions "acp sync -")
+assert_has "$completions" "--branch" "acp sync -<TAB>"
+assert_has "$completions" "-b" "acp sync -<TAB>"
+assert_has "$completions" "--verbose" "acp sync -<TAB>"
+assert_has "$completions" "-v" "acp sync -<TAB>"
+assert_not_has "$completions" "--merge" "acp sync -<TAB> (no pr options)"
+assert_not_has "$completions" "--fetch" "acp sync -<TAB> (no checkout options)"
+assert_not_has "$completions" "--all" "acp sync -<TAB> (no branches options)"
+pass "acp sync -<TAB>: shows sync options, no other options leak"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"
