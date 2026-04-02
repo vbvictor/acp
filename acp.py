@@ -425,67 +425,6 @@ def enable_auto_merge(
     print(f'PR "{commit_message}" ({pr_url}) will auto-merge when checks pass')
 
 
-def show_help() -> None:
-    print("usage: acp pr <commit message> [pr options]")
-    print("       acp checkout <branch> [checkout options]")
-    print("       acp branches")
-    print("       acp sync [sync options]")
-    print()
-    print("Commands:")
-    print("  pr <message>                Create a PR with staged changes")
-    print(
-        "  checkout <branch>           Checkout a branch, stripping 'user:' prefix if present"
-    )
-    print(
-        "  branches                    List ACP branches with linked PRs (use -a for all)"
-    )
-    print("  sync                        Sync fork with upstream repository")
-    print()
-    print("Branches Options:")
-    print("  -a, --all                   Show all ACP branches on upstream remote")
-    print()
-    print("Sync Options:")
-    print("  -b, --branch <name>         Branch to sync (default: main)")
-    print("  -v, --verbose               Show detailed output")
-    print()
-    print("Checkout Options:")
-    print(
-        "  -f, --fetch                 Fetch and fast-forward branch from upstream after checkout"
-    )
-    print()
-    print("PR Options:")
-    print("  -a, --add                   Run 'git add .' before committing changes")
-    print("  -b, --body <text>           Custom PR body message")
-    print("  -i, --interactive           Show PR creation URL instead of creating PR")
-    print("  -d, --draft                 Create PR as a draft")
-    print("  -r, --reviewers <users>     Comma-separated list of GitHub usernames")
-    print("  -v, --verbose               Show detailed output")
-    print("  --merge                     Merge PR immediately after creation")
-    print("  --auto-merge                Enable GitHub auto-merge after PR creation")
-    print(
-        "  --merge-method <method>     Merge method: squash (default), merge, or rebase"
-    )
-    print("  -s, --sync                  Sync current branch with remote after --merge")
-    print("  --version                   Show version number")
-    print("  -h, --help                  Show this help message")
-    print()
-    print("Shell Completions:")
-    print(
-        "  Bash:  echo 'eval \"$(register-python-argcomplete --no-defaults acp)\"' >> ~/.bashrc"
-    )
-    print(
-        "  Zsh:   echo 'eval \"$(register-python-argcomplete --no-defaults acp)\"' >> ~/.zshrc"
-    )
-    print(
-        "  Fish:  register-python-argcomplete --shell fish acp > ~/.config/fish/completions/acp.fish"
-    )
-    print()
-    print("Examples:")
-    print('  acp pr "fix: some typo" -i')
-    print('  acp pr "fix: urgent" -b "Closes issue #123" --merge --merge-method rebase')
-    print('  acp pr "feat: new feature" -r vbvictor,octodad')
-
-
 def strip_branch_prefix(branch: str) -> str:
     """Strip the 'username:' prefix from a branch name.
 
@@ -833,16 +772,26 @@ _no_files = _NoFilesCompleter()
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="acp",
-        usage="acp <command> [options]",
         description="acp - create PRs in one command",
-        add_help=False,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""\
+shell completions:
+  Bash:  echo 'eval "$(register-python-argcomplete --no-defaults acp)"' >> ~/.bashrc
+  Zsh:   echo 'eval "$(register-python-argcomplete --no-defaults acp)"' >> ~/.zshrc
+  Fish:  register-python-argcomplete --shell fish acp > ~/.config/fish/completions/acp.fish
+
+examples:
+  acp pr "fix: some typo" -i
+  acp pr "fix: urgent" -b "Closes issue #123" --merge --merge-method rebase
+  acp pr "feat: new feature" -r vbvictor,octodad""",
     )
-    parser.add_argument("-h", "--help", action="store_true", help="Show help message")
-    parser.add_argument("--version", action="store_true", help="Show version number")
+    parser.add_argument(
+        "--version", action="version", version=f"acp version {__version__}"
+    )
 
     subparsers = parser.add_subparsers(dest="command")
 
-    pr_parser = subparsers.add_parser("pr", add_help=False)
+    pr_parser = subparsers.add_parser("pr", help="Create a PR with staged changes")
     pr_parser.add_argument("message", nargs="?", help=argparse.SUPPRESS).completer = (  # type: ignore[attr-defined]
         _no_files
     )
@@ -896,7 +845,9 @@ def main() -> None:
         help="Comma-separated list of GitHub usernames to request reviews from",
     )
 
-    checkout_parser = subparsers.add_parser("checkout", add_help=False)
+    checkout_parser = subparsers.add_parser(
+        "checkout", help="Checkout a branch, stripping 'user:' prefix if present"
+    )
     checkout_parser.add_argument(
         "branch", nargs="?", help=argparse.SUPPRESS
     ).completer = _no_files  # type: ignore[attr-defined]
@@ -907,7 +858,9 @@ def main() -> None:
         help="Fetch and fast-forward branch from upstream after checkout",
     )
 
-    sync_parser = subparsers.add_parser("sync", add_help=False)
+    sync_parser = subparsers.add_parser(
+        "sync", help="Sync fork with upstream repository"
+    )
     sync_parser.add_argument(
         "-b",
         "--branch",
@@ -919,7 +872,9 @@ def main() -> None:
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
 
-    branches_parser = subparsers.add_parser("branches", add_help=False)
+    branches_parser = subparsers.add_parser(
+        "branches", help="List ACP branches with linked PRs"
+    )
     branches_parser.add_argument(
         "-a",
         "--all",
@@ -930,12 +885,8 @@ def main() -> None:
     argcomplete.autocomplete(parser, default_completer=_no_files)  # type: ignore[arg-type]
     args = parser.parse_args()
 
-    if args.version:
-        print(f"acp version {__version__}")
-        sys.exit(0)
-
-    if args.help or not args.command:
-        show_help()
+    if not args.command:
+        parser.print_help()
         sys.exit(0)
 
     try:
@@ -965,9 +916,6 @@ def main() -> None:
                 reviewers=args.reviewers,
                 draft=args.draft,
             )
-        else:
-            show_help()
-            sys.exit(1)
     except KeyboardInterrupt:
         print("\n\nCancelled.", file=sys.stderr)
         sys.exit(130)
