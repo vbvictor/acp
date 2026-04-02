@@ -775,11 +775,6 @@ def main() -> None:
         description="acp - create PRs in one command",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
-shell completions:
-  Bash:  echo 'eval "$(register-python-argcomplete --no-defaults acp)"' >> ~/.bashrc
-  Zsh:   echo 'eval "$(register-python-argcomplete --no-defaults acp)"' >> ~/.zshrc
-  Fish:  register-python-argcomplete --shell fish acp > ~/.config/fish/completions/acp.fish
-
 examples:
   acp pr "fix: some typo" -i
   acp pr "fix: urgent" -b "Closes issue #123" --merge --merge-method rebase
