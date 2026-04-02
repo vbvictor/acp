@@ -53,6 +53,11 @@ def get_current_version():
     return None
 
 
+def parse_version(version):
+    """Parse a version string into a tuple of integers."""
+    return tuple(int(x) for x in version.split("."))
+
+
 def update_pyproject_toml(version):
     """Update version in pyproject.toml."""
     toml_path = Path("pyproject.toml")
@@ -226,6 +231,14 @@ Uses the local acp.py script automatically.
 
     new_version = validate_version(args.version)
     current_version = get_current_version()
+
+    if current_version and parse_version(new_version) <= parse_version(current_version):
+        print(
+            f"New version ({new_version}) must be greater than "
+            f"current version ({current_version})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     print("ACP Release Automation")
     print("=" * 50)
