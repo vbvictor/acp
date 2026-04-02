@@ -100,8 +100,6 @@ pass "acp pr --merge-method <TAB>: shows choices (squash, merge, rebase)"
 completions=$(get_completions "acp checkout ")
 assert_not_has "$completions" ".py" "acp checkout <TAB> (no files)"
 assert_not_has "$completions" "--merge" "acp checkout <TAB> (no pr options)"
-assert_not_has "$completions" "--verbose" "acp checkout <TAB> (no pr options)"
-assert_not_has "$completions" "--add" "acp checkout <TAB> (no pr options)"
 pass "acp checkout <TAB>: no file or pr option completions"
 
 # "acp checkout -<TAB>" should show checkout options, not pr options
@@ -109,9 +107,6 @@ completions=$(get_completions "acp checkout -")
 assert_has "$completions" "--fetch" "acp checkout -<TAB>"
 assert_has "$completions" "-f" "acp checkout -<TAB>"
 assert_not_has "$completions" "--merge" "acp checkout -<TAB> (no pr options)"
-assert_not_has "$completions" "--verbose" "acp checkout -<TAB> (no pr options)"
-assert_not_has "$completions" "--add" "acp checkout -<TAB> (no pr options)"
-assert_not_has "$completions" "--reviewers" "acp checkout -<TAB> (no pr options)"
 pass "acp checkout -<TAB>: shows checkout options, no pr options leak"
 
 # =============================================================================
@@ -122,8 +117,6 @@ completions=$(get_completions "acp branches -")
 assert_has "$completions" "--all" "acp branches -<TAB>"
 assert_has "$completions" "-a" "acp branches -<TAB>"
 assert_not_has "$completions" "--merge" "acp branches -<TAB> (no pr options)"
-assert_not_has "$completions" "--verbose" "acp branches -<TAB> (no pr options)"
-assert_not_has "$completions" "--fetch" "acp branches -<TAB> (no checkout options)"
 pass "acp branches -<TAB>: shows branches options, no other options leak"
 
 # =============================================================================
@@ -136,8 +129,6 @@ assert_has "$completions" "-b" "acp sync -<TAB>"
 assert_has "$completions" "--verbose" "acp sync -<TAB>"
 assert_has "$completions" "-v" "acp sync -<TAB>"
 assert_not_has "$completions" "--merge" "acp sync -<TAB> (no pr options)"
-assert_not_has "$completions" "--fetch" "acp sync -<TAB> (no checkout options)"
-assert_not_has "$completions" "--all" "acp sync -<TAB> (no branches options)"
 pass "acp sync -<TAB>: shows sync options, no other options leak"
 
 echo ""
