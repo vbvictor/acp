@@ -52,10 +52,10 @@ Changelog = "https://github.com/vbvictor/acp/releases"
 dev = [
     "pytest==9.0.3",
     "pytest-cov==7.1.0",
-    "ruff==0.15.10",
+    "ruff==0.15.11",
     "black==26.3.1",
     "yamllint==1.38.0",
-    "zizmor==1.24.0; python_version>='3.10'",
+    "zizmor==1.24.1; python_version>='3.10'",
     "shellcheck-py==0.11.0.1",
     "mypy==1.20.1",
     "build==1.4.3",
