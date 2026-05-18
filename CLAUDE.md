@@ -44,6 +44,23 @@ When adding or modifying CLI options/flags, also run `make test-completions`.
 
 To create a pull request: `acp pr -a "feat: add <description>"` (the `-a` flag stages all changes automatically).
 
+## Implementing a new subcommand
+
+1. Add the logic function (e.g. `def my_cmd(...) -> None`) in `acp.py`, near related functions.
+2. Add the subparser block in `main()` under `subparsers = parser.add_subparsers(...)`.
+3. Wire it up in the `if args.command == ...` dispatch block inside `main()`.
+4. Add unit tests in `test_acp.py`:
+   - A `TestMyCmd` class that patches `subprocess.run` and tests the function directly.
+   - A `TestMyCmdCommand` class that patches `acp.my_cmd` and drives `acp.main()` via `mock.patch.object(sys, "argv", [...])`.
+5. Run `make format && make lint && make test`.
+6. If the subcommand adds or changes CLI flags, also run `make test-completions` and update `tests/completions/test_completions.sh` to assert the new subcommand appears in `acp <TAB>` and its flags appear in `acp my-cmd -<TAB>`.
+
+## Fixing a bug
+
+1. Reproduce with a focused test (`venv/bin/pytest test_acp.py::TestClass::test_method -v`).
+2. Fix the code in `acp.py`.
+3. Run `make format && make lint && make test` to confirm everything is green.
+
 ## Architecture
 
 The codebase is a single-file CLI tool (`acp.py`) with tests (`test_acp.py`).
