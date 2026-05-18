@@ -21,3 +21,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: DavidAnson/markdownlint-cli2-action@ded1f9488f68a970bc66ea5619e13e9b52e601cd # v23.2.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+      - name: pymarkdown
+        run: |
+          pip install pymarkdownlnt==0.9.37 --quiet
+          find . -name "*.md" -not -path "./venv/*" -print0 | xargs -0 pymarkdown --config .pymarkdown.json scan
