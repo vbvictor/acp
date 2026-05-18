@@ -60,6 +60,7 @@ dev = [
     "mypy==2.0.0",
     "build==1.5.0",
     "twine==6.2.0",
+    "pymarkdownlnt==0.9.37",
 ]
 
 [project.scripts]

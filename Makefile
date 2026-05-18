@@ -37,6 +37,7 @@ lint:
 	output=$$(venv/bin/zizmor --color=always --config .zizmor.yml .github/workflows/ 2>&1) || { echo "$$output"; failed="$$failed zizmor"; }; \
 	output=$$(venv/bin/shellcheck --color=always tests/completions/test_completions.sh 2>&1) || { echo "$$output"; failed="$$failed shellcheck"; }; \
 	output=$$(venv/bin/mypy --color-output acp.py 2>&1) || { echo "$$output"; failed="$$failed mypy"; }; \
+	output=$$(venv/bin/pymarkdown --config .pymarkdown.json scan $(shell find . -name "*.md" -not -path "./venv/*") 2>&1) || { echo "$$output"; failed="$$failed pymarkdown"; }; \
 	if [ -n "$$failed" ]; then \
 		msg="FAILED LINTERS:$$failed"; \
 		line=$$(printf '%*s' $${#msg} '' | tr ' ' '-'); \
