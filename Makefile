@@ -37,6 +37,14 @@ lint:
 	output=$$(venv/bin/zizmor --color=always --config .zizmor.yml .github/workflows/ 2>&1) || { echo "$$output"; failed="$$failed zizmor"; }; \
 	output=$$(venv/bin/shellcheck --color=always tests/completions/test_completions.sh 2>&1) || { echo "$$output"; failed="$$failed shellcheck"; }; \
 	output=$$(venv/bin/mypy --color-output acp.py 2>&1) || { echo "$$output"; failed="$$failed mypy"; }; \
+	output=$$(venv/bin/pymarkdown --config .pymarkdown.json scan $(shell find . -name "*.md" -not -path "./venv/*") 2>&1) || { echo "$$output"; failed="$$failed pymarkdown"; }; \
+	if command -v actionlint > /dev/null 2>&1; then \
+		output=$$(actionlint -color 2>&1) || { echo "$$output"; failed="$$failed actionlint"; }; \
+	else \
+		echo "warning: actionlint not found, skipping"; \
+		echo "  install: go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.7"; \
+		echo "  add to PATH: echo 'export PATH=\"\$$HOME/go/bin:\$$PATH\"' >> ~/.bashrc"; \
+	fi; \
 	if [ -n "$$failed" ]; then \
 		msg="FAILED LINTERS:$$failed"; \
 		line=$$(printf '%*s' $${#msg} '' | tr ' ' '-'); \
