@@ -1502,6 +1502,70 @@ class TestListBranches:
         assert "HEAD" not in output
 
 
+class TestListBranchesAuthor:
+    def _git_result(self, stdout):
+        return subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=stdout, stderr=""
+        )
+
+    def _gh_pr_result(self, prs=None):
+        return subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=json.dumps(prs or []),
+            stderr="",
+        )
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run", return_value="testuser")
+    def test_gh_pr_list_uses_author_me(self, mock_acp_run, mock_run, capsys):
+        mock_run.side_effect = [
+            self._git_result(""),
+            self._git_result(""),
+            self._gh_pr_result(),
+        ]
+        acp.list_branches()
+        pr_list_call = mock_run.call_args_list[2]
+        assert "--author" in pr_list_call[0][0]
+        assert "@me" in pr_list_call[0][0]
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run", return_value="testuser")
+    def test_other_users_prs_do_not_match_local_branches(
+        self, mock_acp_run, mock_run, capsys
+    ):
+        other_peoples_prs = [
+            {"headRefName": "fix-something", "title": "fix", "number": 99, "url": "u"},
+            {"headRefName": "feature-xyz", "title": "feat", "number": 100, "url": "u"},
+        ]
+        mock_run.side_effect = [
+            self._git_result("  origin/acp/testuser/1234\n"),
+            self._git_result(""),
+            self._gh_pr_result(other_peoples_prs),
+        ]
+        acp.list_branches()
+        assert "No ACP branches with linked PRs found." in capsys.readouterr().out
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run", return_value="testuser")
+    def test_own_pr_matches_local_branch(self, mock_acp_run, mock_run, capsys):
+        own_prs = [
+            {
+                "headRefName": "acp/testuser/1234",
+                "title": "my fix",
+                "number": 42,
+                "url": "u",
+            },
+        ]
+        mock_run.side_effect = [
+            self._git_result("  origin/acp/testuser/1234\n"),
+            self._git_result(""),
+            self._gh_pr_result(own_prs),
+        ]
+        acp.list_branches()
+        assert "acp/testuser/1234 -> #42 my fix" in capsys.readouterr().out
+
+
 class TestListBranchesVerbose:
     @mock.patch("subprocess.run")
     @mock.patch("acp.run", return_value="testuser")
