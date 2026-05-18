@@ -656,6 +656,14 @@ def create_pr(
     if verbose:
         print(f"Current branch: '{original_branch}'")
 
+    if original_branch.startswith("acp/"):
+        print(
+            f"Error: Already on an ACP branch '{original_branch}'. "
+            "Switch to your base branch before creating a new PR.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     if run_check(["git", "diff", "--cached", "--quiet"]):
         print("Error: No staged changes. Run 'git add' first.", file=sys.stderr)
         sys.exit(1)

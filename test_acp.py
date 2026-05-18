@@ -40,6 +40,16 @@ class TestRunCheck:
 class TestCreatePR:
     @mock.patch("acp.run")
     @mock.patch("acp.run_check")
+    def test_create_pr_on_acp_branch(self, mock_run_check, mock_run, capsys):
+        mock_run.return_value = "acp/testuser/1234567890123456"
+
+        with pytest.raises(SystemExit) as exc:
+            acp.create_pr("test commit", verbose=False, body="")
+        assert exc.value.code == 1
+        assert "Already on an ACP branch" in capsys.readouterr().err
+
+    @mock.patch("acp.run")
+    @mock.patch("acp.run_check")
     def test_create_pr_no_staged_changes(self, mock_run_check, mock_run):
         mock_run.return_value = "main"
         mock_run_check.return_value = True
