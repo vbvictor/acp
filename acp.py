@@ -580,6 +580,36 @@ def sync_fork(branch: str = "main", verbose: bool = False) -> None:
     print(f"Fork synced with upstream ({branch})")
 
 
+def pull(verbose: bool = False) -> None:
+    """Pull latest changes, recursing into submodules if any are out of sync."""
+    submodule_result = subprocess.run(
+        ["git", "submodule", "status"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    has_submodules = (
+        submodule_result.returncode == 0 and submodule_result.stdout.strip()
+    )
+    needs_recurse = has_submodules and any(
+        line and line[0] in ("+", "-") for line in submodule_result.stdout.splitlines()
+    )
+
+    if needs_recurse:
+        if verbose:
+            print("Submodules out of sync, running: git pull --recurse-submodules")
+        cmd = ["git", "pull", "--recurse-submodules"]
+    else:
+        if verbose:
+            print("Running: git pull")
+        cmd = ["git", "pull"]
+
+    result = subprocess.run(cmd, check=False)
+    if result.returncode != 0:
+        sys.exit(result.returncode)
+
+
 def fetch_upstream_branch(branch: str) -> None:
     remote = (
         "upstream" if run_check(["git", "remote", "get-url", "upstream"]) else "origin"
@@ -867,6 +897,13 @@ examples:
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
 
+    pull_parser = subparsers.add_parser(
+        "pull", help="Pull latest changes, syncing submodules when needed"
+    )
+    pull_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
     branches_parser = subparsers.add_parser(
         "branches", help="List ACP branches with linked PRs"
     )
@@ -885,7 +922,9 @@ examples:
         sys.exit(0)
 
     try:
-        if args.command == "sync":
+        if args.command == "pull":
+            pull(verbose=args.verbose)
+        elif args.command == "sync":
             sync_fork(branch=args.branch, verbose=args.verbose)
         elif args.command == "branches":
             list_branches(show_all=args.all)
