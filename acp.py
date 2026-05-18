@@ -501,6 +501,8 @@ def list_branches(show_all: bool = False, verbose: bool = False) -> None:
             "gh",
             "pr",
             "list",
+            "--author",
+            "@me",
             "--state",
             "open",
             "--json",
