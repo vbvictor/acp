@@ -38,6 +38,18 @@ lint:
 	output=$$(venv/bin/shellcheck --color=always tests/completions/test_completions.sh 2>&1) || { echo "$$output"; failed="$$failed shellcheck"; }; \
 	output=$$(venv/bin/mypy --color-output acp.py 2>&1) || { echo "$$output"; failed="$$failed mypy"; }; \
 	output=$$(venv/bin/pymarkdown --config .pymarkdown.json scan $(shell find . -name "*.md" -not -path "./venv/*") 2>&1) || { echo "$$output"; failed="$$failed pymarkdown"; }; \
+	if command -v markdownlint-cli2 > /dev/null 2>&1; then \
+		output=$$(markdownlint-cli2 "**/*.md" 2>&1) || { echo "$$output"; failed="$$failed markdownlint-cli2"; }; \
+	else \
+		echo "warning: markdownlint-cli2 not found, skipping"; \
+		echo "  install:"; \
+		echo "    npm install -g markdownlint-cli2"; \
+		echo "  in case of an error first set-up 'npm-global' and retry installation"; \
+		echo "    mkdir -p ~/.npm-global"; \
+		echo "    npm config set prefix '~/.npm-global'"; \
+		echo "    echo 'export PATH=\"\$$HOME/.npm-global/bin:\$$PATH\"' >> ~/.bashrc"; \
+		echo "    source ~/.bashrc"; \
+	fi; \
 	if command -v actionlint > /dev/null 2>&1; then \
 		output=$$(actionlint -color 2>&1) || { echo "$$output"; failed="$$failed actionlint"; }; \
 	else \
