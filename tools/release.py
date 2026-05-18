@@ -219,7 +219,7 @@ Prerequisites:
 
 The script updates version files, creates a PR, merges it,
 creates a tag, and triggers GitHub Actions for release.
-Uses the local acp.py script automatically.
+Uses the local acp.py script automatically!!!
         """,
     )
     parser.add_argument(
