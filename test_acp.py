@@ -1502,6 +1502,45 @@ class TestListBranches:
         assert "HEAD" not in output
 
 
+class TestListBranchesVerbose:
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run", return_value="testuser")
+    def test_verbose_prints_user_and_patterns(self, mock_acp_run, mock_run, capsys):
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="[]", stderr=""),
+        ]
+        acp.list_branches(verbose=True)
+        out = capsys.readouterr().out
+        assert "GitHub user: 'testuser'" in out
+        assert "Searching patterns:" in out
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run", return_value="testuser")
+    def test_verbose_prints_open_prs(self, mock_acp_run, mock_run, capsys):
+        prs = [
+            {
+                "headRefName": "acp/testuser/1234",
+                "title": "feat",
+                "number": 1,
+                "url": "u",
+            }
+        ]
+        mock_run.side_effect = [
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout="  origin/acp/testuser/1234\n", stderr=""
+            ),
+            subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+            subprocess.CompletedProcess(
+                args=[], returncode=0, stdout=json.dumps(prs), stderr=""
+            ),
+        ]
+        acp.list_branches(verbose=True)
+        out = capsys.readouterr().out
+        assert "Open PRs from 'gh pr list'" in out
+
+
 class TestSyncFork:
     @mock.patch("subprocess.run")
     @mock.patch("acp.run")
@@ -1722,19 +1761,31 @@ class TestBranchesCommand:
     def test_branches_command(self, mock_list):
         with mock.patch.object(sys, "argv", ["acp", "branches"]):
             acp.main()
-            mock_list.assert_called_once_with(show_all=False)
+            mock_list.assert_called_once_with(show_all=False, verbose=False)
 
     @mock.patch("acp.list_branches")
     def test_branches_command_with_all(self, mock_list):
         with mock.patch.object(sys, "argv", ["acp", "branches", "--all"]):
             acp.main()
-            mock_list.assert_called_once_with(show_all=True)
+            mock_list.assert_called_once_with(show_all=True, verbose=False)
 
     @mock.patch("acp.list_branches")
     def test_branches_command_with_all_short(self, mock_list):
         with mock.patch.object(sys, "argv", ["acp", "branches", "-a"]):
             acp.main()
-            mock_list.assert_called_once_with(show_all=True)
+            mock_list.assert_called_once_with(show_all=True, verbose=False)
+
+    @mock.patch("acp.list_branches")
+    def test_branches_command_verbose(self, mock_list):
+        with mock.patch.object(sys, "argv", ["acp", "branches", "-v"]):
+            acp.main()
+            mock_list.assert_called_once_with(show_all=False, verbose=True)
+
+    @mock.patch("acp.list_branches")
+    def test_branches_command_verbose_long(self, mock_list):
+        with mock.patch.object(sys, "argv", ["acp", "branches", "--verbose"]):
+            acp.main()
+            mock_list.assert_called_once_with(show_all=False, verbose=True)
 
 
 class TestPull:

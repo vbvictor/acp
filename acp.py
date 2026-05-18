@@ -445,13 +445,15 @@ def is_github_user(username: str) -> bool:
     return result.returncode == 0
 
 
-def list_branches(show_all: bool = False) -> None:
+def list_branches(show_all: bool = False, verbose: bool = False) -> None:
     """List ACP branches with linked PR titles.
 
     By default, only shows branches with linked PRs.
     With show_all=True, shows all ACP branches on upstream remote.
     """
     gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+    if verbose:
+        print(f"GitHub user: '{gh_user}'")
 
     if show_all:
         remote = (
@@ -459,10 +461,15 @@ def list_branches(show_all: bool = False) -> None:
             if run_check(["git", "remote", "get-url", "upstream"])
             else "origin"
         )
+        if verbose:
+            print(f"Fetching remote: '{remote}'")
         run_check(["git", "fetch", "--prune", remote])
         patterns = [f"{remote}/acp/*", f"{remote}/{gh_user}/acp/*"]
     else:
         patterns = ["*/acp/*", f"*/{gh_user}/acp/*"]
+
+    if verbose:
+        print(f"Searching patterns: {patterns}")
 
     branches: list[str] = []
     for pattern in patterns:
@@ -475,12 +482,19 @@ def list_branches(show_all: bool = False) -> None:
         if result.returncode != 0:
             print(f"Error: {result.stderr}", file=sys.stderr)
             sys.exit(1)
-        for line in result.stdout.strip().splitlines():
-            branch = line.strip()
-            if " -> " in branch:
-                continue
+        found = [
+            line.strip()
+            for line in result.stdout.strip().splitlines()
+            if " -> " not in line and line.strip()
+        ]
+        if verbose:
+            print(f"  pattern '{pattern}': {found or '(none)'}")
+        for branch in found:
             if branch not in branches:
                 branches.append(branch)
+
+    if verbose:
+        print(f"Total local ACP branches found: {len(branches)}")
 
     pr_result = subprocess.run(
         [
@@ -504,10 +518,17 @@ def list_branches(show_all: bool = False) -> None:
         for pr in json.loads(pr_result.stdout):
             pr_map[pr["headRefName"]] = pr
 
+    if verbose:
+        print(
+            f"Open PRs from 'gh pr list': {list(pr_map.keys()) if pr_map else '(none)'}"
+        )
+
     if not show_all:
         branches = [
             b for b in branches if (b.split("/", 1)[1] if "/" in b else b) in pr_map
         ]
+        if verbose:
+            print(f"Branches with linked PRs: {branches or '(none)'}")
 
     if not branches:
         if show_all:
@@ -921,6 +942,9 @@ examples:
         action="store_true",
         help="Show all ACP branches on upstream remote",
     )
+    branches_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
 
     argcomplete.autocomplete(parser, default_completer=_no_files)  # type: ignore[arg-type]
     args = parser.parse_args()
@@ -935,7 +959,7 @@ examples:
         elif args.command == "sync":
             sync_fork(branch=args.branch, verbose=args.verbose)
         elif args.command == "branches":
-            list_branches(show_all=args.all)
+            list_branches(show_all=args.all, verbose=args.verbose)
         elif args.command == "checkout":
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)
