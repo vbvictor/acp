@@ -1727,5 +1727,111 @@ class TestBranchesCommand:
             mock_list.assert_called_once_with(show_all=True)
 
 
+class TestPull:
+    @mock.patch("subprocess.run")
+    def test_pull_no_submodules(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout="", stderr=""),  # git submodule status
+            mock.Mock(returncode=0, stdout="", stderr=""),  # git pull
+        ]
+        acp.pull()
+        calls = [c[0][0] for c in mock_run.call_args_list]
+        assert ["git", "pull"] in calls
+        assert ["git", "pull", "--recurse-submodules"] not in calls
+
+    @mock.patch("subprocess.run")
+    def test_pull_submodules_in_sync(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(
+                returncode=0,
+                stdout=" abc123 llvm-project (v17.0.0)\n",
+                stderr="",
+            ),  # git submodule status (space prefix = in sync)
+            mock.Mock(returncode=0, stdout="", stderr=""),  # git pull
+        ]
+        acp.pull()
+        calls = [c[0][0] for c in mock_run.call_args_list]
+        assert ["git", "pull"] in calls
+        assert ["git", "pull", "--recurse-submodules"] not in calls
+
+    @mock.patch("subprocess.run")
+    def test_pull_submodules_out_of_sync(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(
+                returncode=0,
+                stdout="+abc123 llvm-project (v17.0.0)\n",
+                stderr="",
+            ),  # git submodule status (+ prefix = out of sync)
+            mock.Mock(
+                returncode=0, stdout="", stderr=""
+            ),  # git pull --recurse-submodules
+        ]
+        acp.pull()
+        calls = [c[0][0] for c in mock_run.call_args_list]
+        assert ["git", "pull", "--recurse-submodules"] in calls
+
+    @mock.patch("subprocess.run")
+    def test_pull_submodule_not_initialized(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(
+                returncode=0,
+                stdout="-abc123 llvm-project\n",
+                stderr="",
+            ),  # git submodule status (- prefix = not initialized)
+            mock.Mock(returncode=0, stdout="", stderr=""),
+        ]
+        acp.pull()
+        calls = [c[0][0] for c in mock_run.call_args_list]
+        assert ["git", "pull", "--recurse-submodules"] in calls
+
+    @mock.patch("subprocess.run")
+    def test_pull_failure_exits(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout="", stderr=""),  # git submodule status
+            mock.Mock(returncode=1, stdout="", stderr=""),  # git pull fails
+        ]
+        with pytest.raises(SystemExit) as exc:
+            acp.pull()
+        assert exc.value.code == 1
+
+    @mock.patch("subprocess.run")
+    def test_pull_verbose_no_submodules(self, mock_run, capsys):
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout="", stderr=""),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+        ]
+        acp.pull(verbose=True)
+        assert "git pull" in capsys.readouterr().out
+
+    @mock.patch("subprocess.run")
+    def test_pull_verbose_with_submodules(self, mock_run, capsys):
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout="+abc123 sub\n", stderr=""),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+        ]
+        acp.pull(verbose=True)
+        assert "--recurse-submodules" in capsys.readouterr().out
+
+
+class TestPullCommand:
+    @mock.patch("acp.pull")
+    def test_pull_command(self, mock_pull):
+        with mock.patch.object(sys, "argv", ["acp", "pull"]):
+            acp.main()
+            mock_pull.assert_called_once_with(verbose=False)
+
+    @mock.patch("acp.pull")
+    def test_pull_command_verbose(self, mock_pull):
+        with mock.patch.object(sys, "argv", ["acp", "pull", "-v"]):
+            acp.main()
+            mock_pull.assert_called_once_with(verbose=True)
+
+    @mock.patch("acp.pull")
+    def test_pull_command_verbose_long(self, mock_pull):
+        with mock.patch.object(sys, "argv", ["acp", "pull", "--verbose"]):
+            acp.main()
+            mock_pull.assert_called_once_with(verbose=True)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

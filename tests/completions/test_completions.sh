@@ -53,6 +53,7 @@ assert_has "$completions" "pr" "acp <TAB>"
 assert_has "$completions" "checkout" "acp <TAB>"
 assert_has "$completions" "branches" "acp <TAB>"
 assert_has "$completions" "sync" "acp <TAB>"
+assert_has "$completions" "pull" "acp <TAB>"
 assert_not_has "$completions" ".py" "acp <TAB> (no files)"
 pass "acp <TAB>: shows subcommands, no files"
 
@@ -130,6 +131,16 @@ assert_has "$completions" "--verbose" "acp sync -<TAB>"
 assert_has "$completions" "-v" "acp sync -<TAB>"
 assert_not_has "$completions" "--merge" "acp sync -<TAB> (no pr options)"
 pass "acp sync -<TAB>: shows sync options, no other options leak"
+
+# =============================================================================
+# Pull subcommand: "acp pull -<TAB>" should show pull options
+# =============================================================================
+
+completions=$(get_completions "acp pull -")
+assert_has "$completions" "--verbose" "acp pull -<TAB>"
+assert_has "$completions" "-v" "acp pull -<TAB>"
+assert_not_has "$completions" "--merge" "acp pull -<TAB> (no pr options)"
+pass "acp pull -<TAB>: shows pull options, no other options leak"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"
