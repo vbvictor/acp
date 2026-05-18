@@ -27,4 +27,4 @@ jobs:
       - name: pymarkdown
         run: |
           pip install pymarkdownlnt==0.9.37 --quiet
-          pymarkdown --config .pymarkdown.json scan $(find . -name "*.md" -not -path "./venv/*")
+          find . -name "*.md" -not -path "./venv/*" -print0 | xargs -0 pymarkdown --config .pymarkdown.json scan
