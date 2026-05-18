@@ -53,7 +53,9 @@ To create a pull request: `acp pr -a "feat: add <description>"` (the `-a` flag s
    - A `TestMyCmd` class that patches `subprocess.run` and tests the function directly.
    - A `TestMyCmdCommand` class that patches `acp.my_cmd` and drives `acp.main()` via `mock.patch.object(sys, "argv", [...])`.
 5. Run `make format && make lint && make test`.
-6. If the subcommand adds or changes CLI flags, also run `make test-completions` and update `tests/completions/test_completions.sh` to assert the new subcommand appears in `acp <TAB>` and its flags appear in `acp my-cmd -<TAB>`.
+6. If the subcommand adds or changes CLI flags, also run `make test-completions` and update
+   `tests/completions/test_completions.sh` to assert the new subcommand appears in `acp <TAB>`
+   and its flags appear in `acp my-cmd -<TAB>`.
 
 ## Fixing a bug
 
