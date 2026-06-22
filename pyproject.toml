@@ -50,9 +50,9 @@ Changelog = "https://github.com/vbvictor/acp/releases"
 
 [project.optional-dependencies]
 dev = [
-    "pytest==9.0.3",
+    "pytest==9.1.0",
     "pytest-cov==7.1.0",
-    "ruff==0.15.16",
+    "ruff==0.15.17",
     "black==26.5.1",
     "yamllint==1.38.0",
     "zizmor==1.25.2; python_version>='3.10'",
@@ -60,7 +60,7 @@ dev = [
     "mypy==2.1.0",
     "build==1.5.0",
     "twine==6.2.0",
-    "pymarkdownlnt==0.9.37",
+    "pymarkdownlnt==0.9.38",
 ]
 
 [project.scripts]
