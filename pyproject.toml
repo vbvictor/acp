@@ -52,12 +52,12 @@ Changelog = "https://github.com/vbvictor/acp/releases"
 dev = [
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
-    "ruff==0.15.21",
+    "ruff==0.16.0",
     "black==26.5.1",
     "yamllint==1.38.0",
-    "zizmor==1.26.1; python_version>='3.10'",
+    "zizmor==1.28.0; python_version>='3.10'",
     "shellcheck-py==0.11.0.1",
-    "mypy==2.2.0",
+    "mypy==2.3.0",
     "build==1.5.0",
     "twine==6.2.0",
     "pymarkdownlnt==0.9.39",
@@ -87,9 +87,11 @@ ignore = [
     "PLR0913", # too many arguments - functions like create_pr() and merge_pr() legitimately need many params
     "PLR0915", # too many statements - main() dispatch logic
     "PLR0911", # too many return statements - test helper side_effect functions
+    "PLR0917", # too many positional arguments - we use many arguments
     "PLR2004", # magic value comparison - test assertions like `assert exc.value.code == 1`
     "BLE001",  # blind except - intentional in error recovery to switch back to original branch
     "C901",    # complexity - orchestration functions are inherently complex
+    "CPY001",  # missing copyright notice - we do not use this
 ]
 
 [tool.mypy]
