@@ -1586,6 +1586,74 @@ class TestSyncFork:
         assert "Could not fast-forward" in captured.err
         assert "Fork synced with upstream (main)" in captured.out
 
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_verbose_streams_output(self, mock_run, mock_subprocess, capsys):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+            "main",  # current branch
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        acp.sync_fork(branch="main", verbose=True)
+
+        captured = capsys.readouterr()
+        assert "Fork synced with upstream (main)" in captured.out
+
+        for c in mock_subprocess.call_args_list:
+            cmd = c[0][0]
+            if (
+                ("gh" in str(cmd) and "sync" in str(cmd))
+                or "fetch" in str(cmd)
+                or "merge" in str(cmd)
+            ):
+                assert "capture_output" not in c.kwargs
+
+        fetch_calls = [
+            c for c in mock_subprocess.call_args_list if "fetch" in str(c[0][0])
+        ]
+        assert len(fetch_calls) == 1
+        assert "--progress" in fetch_calls[0][0][0]
+
+    @mock.patch("subprocess.run")
+    @mock.patch("acp.run")
+    def test_sync_fork_verbose_gh_sync_failure(self, mock_run, mock_subprocess, capsys):
+        mock_run.side_effect = [
+            "git@github.com:user/fork.git",  # origin url
+        ]
+
+        def subprocess_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "upstream" in str(cmd) and "get-url" in str(cmd):
+                return mock.Mock(
+                    returncode=0,
+                    stdout="git@github.com:upstream/repo.git",
+                    stderr="",
+                )
+            if "gh" in str(cmd) and "sync" in str(cmd):
+                return mock.Mock(returncode=1, stdout="", stderr="")
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        mock_subprocess.side_effect = subprocess_side_effect
+
+        with pytest.raises(SystemExit) as exc:
+            acp.sync_fork(branch="main", verbose=True)
+        assert exc.value.code == 1
+
+        captured = capsys.readouterr()
+        assert "Failed to sync fork" in captured.err
+
 
 class TestSyncCommand:
     @mock.patch("acp.sync_fork")
