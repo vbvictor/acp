@@ -503,18 +503,26 @@ def sync_fork(branch: str = "main", verbose: bool = False) -> None:
     if verbose:
         print(f"Syncing fork '{fork_repo}' branch '{branch}' with upstream...")
 
-    sync_result = subprocess.run(
-        ["gh", "repo", "sync", fork_repo, "-b", branch],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    if verbose:
+        sync_result = subprocess.run(
+            ["gh", "repo", "sync", fork_repo, "-b", branch], text=True, check=False
+        )
+    else:
+        sync_result = subprocess.run(
+            ["gh", "repo", "sync", fork_repo, "-b", branch],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     if sync_result.returncode != 0:
-        print(
-            f"Error: Failed to sync fork: {sync_result.stderr.strip()}",
-            file=sys.stderr,
-        )
+        if verbose:
+            print("Error: Failed to sync fork", file=sys.stderr)
+        else:
+            print(
+                f"Error: Failed to sync fork: {sync_result.stderr.strip()}",
+                file=sys.stderr,
+            )
         sys.exit(1)
 
     if verbose:
@@ -522,20 +530,39 @@ def sync_fork(branch: str = "main", verbose: bool = False) -> None:
 
     current_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
 
-    run(["git", "fetch", "origin", branch], quiet=True)
+    fetch_cmd = ["git", "fetch", "origin", branch]
+    if verbose:
+        fetch_cmd.append("--progress")
+        fetch_result = subprocess.run(fetch_cmd, check=False)
+        if fetch_result.returncode != 0:
+            print("Error: git fetch failed", file=sys.stderr)
+            sys.exit(1)
+    else:
+        run(fetch_cmd, quiet=True)
 
     if current_branch == branch:
-        merge_result = subprocess.run(
-            ["git", "merge", "--ff-only", f"origin/{branch}"],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if merge_result.returncode != 0:
-            print(
-                f"Warning: Could not fast-forward local '{branch}': {merge_result.stderr.strip()}",
-                file=sys.stderr,
+        merge_cmd = ["git", "merge", "--ff-only", f"origin/{branch}"]
+        if verbose:
+            merge_result = subprocess.run(merge_cmd, text=True, check=False)
+        else:
+            merge_result = subprocess.run(
+                merge_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
             )
+        if merge_result.returncode != 0:
+            if verbose:
+                print(
+                    f"Warning: Could not fast-forward local '{branch}'",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"Warning: Could not fast-forward local '{branch}': "
+                    f"{merge_result.stderr.strip()}",
+                    file=sys.stderr,
+                )
         elif verbose:
             print(f"Local branch '{branch}' updated")
     elif verbose:
