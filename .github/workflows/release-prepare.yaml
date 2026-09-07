@@ -15,6 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: write  # Required to open and merge the version-bump PR (main requires PRs)
       actions: write  # Required to re-trigger release.yaml via gh workflow run
     steps:
       - name: Checkout code
@@ -32,14 +33,33 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: python tools/release.py --non-interactive "$VERSION"
 
-      - name: Commit and push version bump
+      - name: Commit and push version bump on a release branch
         env:
           VERSION: ${{ inputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "release/v${VERSION}"
           git commit -m "chore: bump acp version to ${VERSION}"
-          git push origin HEAD:main
+          git push origin "release/v${VERSION}"
+
+      - name: Create and merge version-bump PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          gh pr create \
+            --base main \
+            --head "release/v${VERSION}" \
+            --title "chore: bump acp version to ${VERSION}" \
+            --body "Automated version bump for release v${VERSION}."
+          gh pr merge "release/v${VERSION}" --squash --delete-branch
+
+      - name: Sync main after merge
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
 
       - name: Create and push tag
         env:
