@@ -226,6 +226,15 @@ Uses the local acp.py script automatically.
         "version",
         help="version number (X.Y.Z format)",
     )
+    parser.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help=(
+            "Skip the confirmation prompt and only update version files "
+            "(the caller handles committing, tagging, and pushing); for "
+            "use in CI"
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -246,10 +255,11 @@ Uses the local acp.py script automatically.
     print(f"New version:     {new_version}")
     print("=" * 50)
 
-    response = input(f"\nProceed with release {new_version}? [y/N]: ")
-    if response.lower() != "y":
-        print("Release cancelled")
-        sys.exit(0)
+    if not args.non_interactive:
+        response = input(f"\nProceed with release {new_version}? [y/N]: ")
+        if response.lower() != "y":
+            print("Release cancelled")
+            sys.exit(0)
 
     print("\nRunning pre-flight checks...")
     check_on_main_branch()
@@ -264,6 +274,11 @@ Uses the local acp.py script automatically.
 
     print("\nStaging files...")
     stage_files()
+
+    if args.non_interactive:
+        print("\nNon-interactive mode: version files updated and staged")
+        print("Skipping PR creation and tagging (handled by the caller)")
+        return
 
     print("\nCreating and merging PR...")
     create_pr_and_merge(current_version, new_version)
