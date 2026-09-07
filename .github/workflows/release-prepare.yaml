@@ -1,0 +1,55 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New version (X.Y.Z)'
+        required: true
+        type: string
+
+permissions: {}  # Minimal permissions at workflow level; jobs declare their own
+
+jobs:
+  bump-and-tag:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      actions: write  # Required to re-trigger release.yaml via gh workflow run
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true  # Needed to push the version-bump commit and tag
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+
+      - name: Update version files
+        env:
+          VERSION: ${{ inputs.version }}
+        run: python tools/release.py --non-interactive "$VERSION"
+
+      - name: Commit and push version bump
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: bump acp version to ${VERSION}"
+          git push origin HEAD:main
+
+      - name: Create and push tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git tag -a "v${VERSION}" -m "Release v${VERSION}"
+          git push origin "v${VERSION}"
+
+      - name: Trigger release workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh workflow run release.yaml --ref "v${VERSION}"

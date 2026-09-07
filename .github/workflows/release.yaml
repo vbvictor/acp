@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'  # Trigger on version tags like v0.3.0, v1.0.0, etc.
+  workflow_dispatch:  # Allows release-prepare.yaml to re-trigger by tag ref
 
 permissions: {}  # Minimal permissions at workflow level; jobs declare their own
 
