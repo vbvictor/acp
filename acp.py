@@ -8,10 +8,12 @@ import argparse
 import json
 import os
 import random
+import string
 import subprocess
 import sys
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, NoReturn
 
 import argcomplete
 
@@ -160,8 +162,20 @@ def get_repo_info(verbose: bool) -> tuple[str, str, bool]:
     return fork_repo, upstream_repo, is_fork
 
 
+def get_gh_user() -> str:
+    return run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+
+
+def is_acp_branch(branch: str) -> bool:
+    """Return True for acp temporary branches and acp stack layer branches."""
+    if branch.startswith("acp/"):
+        return True
+    parts = branch.split("/")
+    return len(parts) == 3 and parts[0] == "users" and parts[2].startswith("acp-")
+
+
 def generate_temp_branch_name(verbose: bool) -> str:
-    gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+    gh_user = get_gh_user()
     random_num = random.randint(1000000000000000, 9999999999999999)
     temp_branch = f"acp/{gh_user}/{random_num}"
 
@@ -189,6 +203,7 @@ def create_github_pr(
     verbose: bool,
     reviewers: str | None = None,
     draft: bool = False,
+    base: str | None = None,
 ) -> str:
     if verbose:
         print(f"Creating PR to: '{upstream_repo}'...")
@@ -207,6 +222,9 @@ def create_github_pr(
 
     if draft:
         gh_cmd.append("--draft")
+
+    if base:
+        gh_cmd.extend(["--base", base])
 
     # For forks, specify head as "username:branch"
     if is_fork:
@@ -478,7 +496,7 @@ def list_branches(show_all: bool = False, verbose: bool = False) -> None:
         prs = [
             pr
             for pr in json.loads(pr_result.stdout)
-            if pr["headRefName"].startswith("acp/")
+            if is_acp_branch(pr["headRefName"])
         ]
 
     if verbose:
@@ -641,6 +659,23 @@ def create_pr(
 ) -> None:
     validate_merge_options(interactive, merge, auto_merge, merge_method, draft)
 
+    stack = load_current_stack()
+    if stack is not None:
+        create_stack_layer(
+            stack,
+            commit_message,
+            verbose=verbose,
+            body=body,
+            interactive=interactive,
+            merge=merge,
+            auto_merge=auto_merge,
+            merge_method=merge_method,
+            add=add,
+            reviewers=reviewers,
+            draft=draft,
+        )
+        return
+
     if add:
         if verbose:
             print("Adding all changes with 'git add .'...")
@@ -650,7 +685,7 @@ def create_pr(
     if verbose:
         print(f"Current branch: '{original_branch}'")
 
-    if original_branch.startswith("acp/"):
+    if is_acp_branch(original_branch):
         print(
             f"Error: Already on an ACP branch '{original_branch}'. "
             "Switch to your base branch before creating a new PR.",
@@ -791,6 +826,805 @@ def create_pr(
         raise
 
 
+def fail(message: str) -> NoReturn:
+    print(f"Error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def get_stack_root() -> Path:
+    # The common dir is shared by all worktrees, so a stack is visible from each of them.
+    git_dir = run(["git", "rev-parse", "--git-common-dir"], quiet=True)
+    return Path(git_dir).resolve() / "acp"
+
+
+def stack_file(stack_id: str) -> Path:
+    return get_stack_root() / "stacks" / f"{stack_id}.json"
+
+
+def load_stack(stack_id: str) -> dict[str, Any] | None:
+    path = stack_file(stack_id)
+    if not path.exists():
+        return None
+    state: dict[str, Any] = json.loads(path.read_text())
+    return state
+
+
+def save_stack(state: dict[str, Any]) -> None:
+    path = stack_file(state["id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def get_current_stack_id() -> str | None:
+    path = get_stack_root() / "current"
+    if not path.exists():
+        return None
+    return path.read_text().strip() or None
+
+
+def set_current_stack_id(stack_id: str | None) -> None:
+    path = get_stack_root() / "current"
+    if stack_id is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(stack_id + "\n")
+
+
+def delete_stack(stack_id: str) -> None:
+    stack_file(stack_id).unlink(missing_ok=True)
+    if get_current_stack_id() == stack_id:
+        set_current_stack_id(None)
+
+
+def load_current_stack() -> dict[str, Any] | None:
+    stack_id = get_current_stack_id()
+    return load_stack(stack_id) if stack_id else None
+
+
+def list_stacks() -> list[dict[str, Any]]:
+    """Return all known stacks, oldest first."""
+    stacks_dir = get_stack_root() / "stacks"
+    if not stacks_dir.is_dir():
+        return []
+    files = sorted(stacks_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    return [json.loads(p.read_text()) for p in files]
+
+
+def resolve_stack(stack_id: str | None, allow_latest: bool = False) -> dict[str, Any]:
+    """Return the requested stack, else the open stack, else (optionally) the latest unfinished one."""
+    if stack_id:
+        state = load_stack(stack_id)
+        if state is None:
+            fail(f"Stack '{stack_id}' not found")
+        return state
+
+    state = load_current_stack()
+    if state is not None:
+        return state
+
+    if allow_latest:
+        unfinished = [s for s in list_stacks() if s["status"] != "done"]
+        if unfinished:
+            return unfinished[-1]
+
+    fail("No open stack. Run 'acp stack start' first or pass a stack id.")
+
+
+def generate_stack_id() -> str:
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+
+
+def stack_branch_name(gh_user: str, stack_id: str, n: int) -> str:
+    # LLVM only allows 'users/<username>/' branches in the main repo, for stacked PRs.
+    return f"users/{gh_user}/acp-{stack_id}-{n}"
+
+
+def can_push_to_repo(repo: str) -> bool:
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repo}", "--jq", ".permissions.push"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def get_pr_state(repo: str, number: int) -> str:
+    """Return OPEN, DRAFT, MERGED, CLOSED, or UNKNOWN."""
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(number),
+            "--repo",
+            repo,
+            "--json",
+            "state,isDraft",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return "UNKNOWN"
+    data = json.loads(result.stdout)
+    if data["state"] == "OPEN" and data.get("isDraft"):
+        return "DRAFT"
+    return str(data["state"])
+
+
+def fetch_pr_states(state: dict[str, Any]) -> dict[int, str]:
+    return {
+        layer["n"]: get_pr_state(state["repo"], layer["pr_number"])
+        for layer in state["layers"]
+        if layer.get("pr_number")
+    }
+
+
+def format_stack_tree(
+    state: dict[str, Any], pr_states: dict[int, str], head_branch: str | None = None
+) -> list[str]:
+    lines = [state["base_branch"]]
+    for depth, layer in enumerate(state["layers"]):
+        indent = "   " * depth
+        pr = f"#{layer['pr_number']}" if layer.get("pr_number") else "(no PR)"
+        fallback_state = "MERGED" if layer.get("merged") else "UNKNOWN"
+        pr_state = pr_states.get(layer["n"], fallback_state).lower()
+        line = f"{indent}└─ {pr} {layer['title']} [{pr_state}] {layer['branch']}"
+        if layer["branch"] == head_branch:
+            line += "  <- HEAD"
+        lines.append(line)
+    return lines
+
+
+def stack_start(
+    draft: bool = False, reviewers: str | None = None, verbose: bool = False
+) -> None:
+    current = load_current_stack()
+    if current is not None:
+        fail(
+            f"Stack '{current['id']}' is already open. "
+            "Run 'acp stack end' or 'acp stack abort' first."
+        )
+
+    base_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
+    if base_branch == "HEAD":
+        fail("HEAD is detached. Check out the base branch before starting a stack.")
+    if is_acp_branch(base_branch):
+        fail(
+            f"Already on an ACP branch '{base_branch}'. "
+            "Switch to your base branch before starting a stack."
+        )
+
+    fork_repo, upstream_repo, is_fork = get_repo_info(verbose)
+
+    if not is_fork:
+        mode, remote, head_repo = "stacked", "origin", fork_repo
+    elif can_push_to_repo(upstream_repo):
+        mode, remote, head_repo = "stacked", "upstream", upstream_repo
+    else:
+        mode, remote, head_repo = "fallback", "origin", fork_repo
+
+    if not check_remote_branch_exists(upstream_repo, base_branch):
+        fail(f"Base branch '{base_branch}' does not exist in '{upstream_repo}'")
+
+    state: dict[str, Any] = {
+        "id": generate_stack_id(),
+        "status": "open",
+        "mode": mode,
+        "repo": upstream_repo,
+        "head_repo": head_repo,
+        "remote": remote,
+        "base_remote": "upstream" if is_fork else "origin",
+        "base_branch": base_branch,
+        "base_sha": run(["git", "rev-parse", "HEAD"], quiet=True),
+        "gh_user": get_gh_user(),
+        "defaults": {"draft": draft, "reviewers": reviewers},
+        "layers": [],
+    }
+    save_stack(state)
+    set_current_stack_id(state["id"])
+
+    print(f"Stack '{state['id']}' started on '{base_branch}' ({upstream_repo})")
+    if mode == "fallback":
+        print(
+            f"Note: no push access to '{upstream_repo}'. Every PR will target "
+            f"'{base_branch}' and include the commits of the PRs below it."
+        )
+    elif verbose:
+        print(f"Layer branches will be pushed to '{remote}' ({head_repo})")
+
+
+def stack_status(stack_id: str | None = None, verbose: bool = False) -> None:
+    if stack_id is None and load_current_stack() is None:
+        stacks = list_stacks()
+        if not stacks:
+            print("No stacks found.")
+            return
+        for s in stacks:
+            print(
+                f"  {s['id']} [{s['status']}] base '{s['base_branch']}', "
+                f"{len(s['layers'])} layer(s)"
+            )
+        return
+
+    state = resolve_stack(stack_id)
+    if verbose:
+        print(f"Querying PR states in '{state['repo']}'...")
+    pr_states = fetch_pr_states(state)
+    head = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
+
+    print(
+        f"Stack '{state['id']}' [{state['status']}, {state['mode']}] in {state['repo']}"
+    )
+    for line in format_stack_tree(state, pr_states, head):
+        print(line)
+
+
+def stack_abort(stack_id: str | None = None) -> None:
+    state = resolve_stack(stack_id)
+    delete_stack(state["id"])
+    print(
+        f"Stack '{state['id']}' aborted. Local stack state was removed; "
+        "PRs and branches were left untouched."
+    )
+
+
+def find_pr_number(state: dict[str, Any], branch: str) -> int | None:
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "list",
+            "--repo",
+            state["repo"],
+            "--head",
+            branch,
+            "--state",
+            "all",
+            "--json",
+            "number",
+            "--jq",
+            ".[0].number",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    out = result.stdout.strip()
+    return int(out) if result.returncode == 0 and out.isdigit() else None
+
+
+def stack_comment_marker(stack_id: str) -> str:
+    return f"<!-- acp-stack:{stack_id} -->"
+
+
+def render_stack_comment(
+    state: dict[str, Any], pr_states: dict[int, str], current_n: int
+) -> str:
+    repo = state["repo"]
+    base = state["base_branch"]
+    layers = state["layers"]
+
+    count = f"{len(layers)} PR" if len(layers) == 1 else f"{len(layers)} PRs"
+    lines = [
+        stack_comment_marker(state["id"]),
+        f"**Stack** ({count}, base `{base}`), merge from the bottom up:",
+        "",
+        f"- `{base}`",
+    ]
+    for depth, layer in enumerate(layers, start=1):
+        number = layer.get("pr_number")
+        if number:
+            text = f"#{number} {layer['title']}"
+        else:
+            text = f"`{layer['branch']}` {layer['title']} (no PR yet)"
+
+        pr_state = pr_states.get(layer["n"], "")
+        label = (
+            f" ({pr_state.lower()})"
+            if pr_state in {"MERGED", "CLOSED", "DRAFT"}
+            else ""
+        )
+
+        if layer["n"] == current_n:
+            text = f"**{text}**{label} ← this PR"
+        elif pr_state in {"MERGED", "CLOSED"}:
+            text = f"~~{text}~~{label}"
+        else:
+            text += label
+
+        if state["mode"] == "fallback" and number:
+            text += f" ([own commit](https://github.com/{repo}/pull/{number}/commits/{layer['head_sha']}))"
+
+        lines.append(f"{'  ' * depth}- {text}")
+
+    if state["mode"] == "fallback":
+        lines += [
+            "",
+            (
+                f"Every PR in this stack targets `{base}`, so each PR also contains the "
+                "commits of the PRs below it. Review only the last commit (linked as "
+                "*own commit*)."
+            ),
+        ]
+    if state["status"] == "open":
+        lines += ["", "_This stack is still in progress, more PRs may be added._"]
+
+    lines += [
+        "",
+        (
+            "<sub>Managed by [acp](https://github.com/vbvictor/acp). "
+            "This comment is updated automatically.</sub>"
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def find_stack_comment(repo: str, number: int, marker: str) -> int | None:
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "--paginate",
+            f"repos/{repo}/issues/{number}/comments",
+            "--jq",
+            f'.[] | select(.body | contains("{marker}")) | .id',
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    ids = result.stdout.split()
+    return int(ids[0]) if result.returncode == 0 and ids else None
+
+
+def upsert_stack_comment(
+    repo: str, number: int, marker: str, body: str, comment_id: int | None
+) -> int | None:
+    """Edit the stack comment on a PR in place, or create it. Return the comment id."""
+    if comment_id is None:
+        comment_id = find_stack_comment(repo, number, marker)
+
+    if comment_id is not None:
+        patch = subprocess.run(
+            [
+                "gh",
+                "api",
+                "-X",
+                "PATCH",
+                f"repos/{repo}/issues/comments/{comment_id}",
+                "-f",
+                f"body={body}",
+                "--jq",
+                ".id",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if patch.returncode == 0:
+            return comment_id
+
+    create = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo}/issues/{number}/comments",
+            "-f",
+            f"body={body}",
+            "--jq",
+            ".id",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if create.returncode != 0:
+        print(
+            f"Warning: Could not post stack comment on #{number}: {create.stderr.strip()}",
+            file=sys.stderr,
+        )
+        return None
+    return int(create.stdout.strip())
+
+
+def refresh_stack_comments(
+    state: dict[str, Any], verbose: bool = False
+) -> dict[int, str]:
+    for layer in state["layers"]:
+        if not layer.get("pr_number"):
+            layer["pr_number"] = find_pr_number(state, layer["branch"])
+
+    pr_states = fetch_pr_states(state)
+    marker = stack_comment_marker(state["id"])
+
+    for layer in state["layers"]:
+        if not layer.get("pr_number"):
+            continue
+        if verbose:
+            print(f"Updating stack comment on #{layer['pr_number']}...")
+        body = render_stack_comment(state, pr_states, layer["n"])
+        layer["comment_id"] = upsert_stack_comment(
+            state["repo"], layer["pr_number"], marker, body, layer.get("comment_id")
+        )
+
+    save_stack(state)
+    return pr_states
+
+
+def build_stack_compare_url(state: dict[str, Any], base: str, branch: str) -> str:
+    head = branch
+    if state["head_repo"] != state["repo"]:
+        head = f"{state['head_repo'].split('/', maxsplit=1)[0]}:{branch}"
+    return f"https://github.com/{state['repo']}/compare/{base}...{head}?expand=1"
+
+
+def rollback_stack_layer(
+    state: dict[str, Any], branch: str, parent: str, parent_sha: str, pushed: bool
+) -> None:
+    """Return to the parent layer with the layer's changes staged again."""
+    print(
+        f"\nError occurred. Returning to '{parent}' with your changes staged...",
+        file=sys.stderr,
+    )
+    run_check(["git", "reset", "--soft", parent_sha])
+    run_check(["git", "checkout", parent])
+    run_check(["git", "branch", "-D", branch])
+    if pushed:
+        run_check(["git", "push", "--quiet", state["remote"], "--delete", branch])
+
+
+def create_stack_layer(
+    state: dict[str, Any],
+    commit_message: str,
+    verbose: bool = False,
+    body: str = "",
+    interactive: bool = False,
+    merge: bool = False,
+    auto_merge: bool = False,
+    merge_method: str = "squash",
+    add: bool = False,
+    reviewers: str | None = None,
+    draft: bool = False,
+) -> None:
+    layers = state["layers"]
+
+    if merge:
+        fail(
+            "--merge is not supported inside a stack. "
+            "Merge PRs from the bottom up, then run 'acp stack sync'."
+        )
+    if auto_merge and layers:
+        fail("--auto-merge is only allowed on the bottom PR of a stack")
+
+    if add:
+        if verbose:
+            print("Adding all changes with 'git add .'...")
+        run(["git", "add", "."], quiet=True)
+
+    parent = layers[-1]["branch"] if layers else state["base_branch"]
+    current = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
+    if current != parent:
+        fail(
+            f"Stack '{state['id']}' is open and its tip is '{parent}', but HEAD is "
+            f"'{current}'. Check out '{parent}' or run 'acp stack end'."
+        )
+
+    if run_check(["git", "diff", "--cached", "--quiet"]):
+        fail("No staged changes. Run 'git add' first.")
+
+    n = len(layers) + 1
+    branch = stack_branch_name(state["gh_user"], state["id"], n)
+    pr_base = parent if state["mode"] == "stacked" else state["base_branch"]
+    parent_sha = run(["git", "rev-parse", "HEAD"], quiet=True)
+    draft = draft or state["defaults"]["draft"]
+    reviewers = reviewers or state["defaults"]["reviewers"]
+
+    if verbose:
+        print(f"Creating stack layer {n}: '{branch}' on top of '{parent}'")
+
+    pushed = False
+    pr_url = None
+    try:
+        run(["git", "checkout", "-b", branch], quiet=True)
+        if verbose:
+            print(f'Committing: "{commit_message}"')
+        run_interactive(["git", "commit", "--quiet", "-m", commit_message])
+
+        if verbose:
+            print(f"Pushing branch '{branch}' to '{state['remote']}'...")
+        run_interactive(["git", "push", "--quiet", "-u", state["remote"], branch])
+        pushed = True
+
+        if interactive:
+            compare_url = build_stack_compare_url(state, pr_base, branch)
+            print(f"PR creation URL: {compare_url}")
+        else:
+            pr_url = create_github_pr(
+                state["repo"],
+                state["head_repo"],
+                branch,
+                commit_message,
+                body,
+                state["head_repo"] != state["repo"],
+                verbose,
+                reviewers,
+                draft,
+                base=pr_base,
+            )
+    except BaseException:
+        rollback_stack_layer(state, branch, parent, parent_sha, pushed)
+        raise
+
+    layers.append(
+        {
+            "n": n,
+            "branch": branch,
+            "parent_sha": parent_sha,
+            "head_sha": run(["git", "rev-parse", "HEAD"], quiet=True),
+            "pr_number": int(pr_url.rstrip("/").rsplit("/", 1)[-1]) if pr_url else None,
+            "title": commit_message,
+            "comment_id": None,
+            "merged": False,
+        }
+    )
+    save_stack(state)
+
+    if pr_url and auto_merge:
+        enable_auto_merge(pr_url, commit_message, merge_method, verbose)
+    elif pr_url and not verbose:
+        print(f"PR created: {pr_url} (layer {n} of stack '{state['id']}')")
+
+    refresh_stack_comments(state, verbose)
+
+
+def stack_end(verbose: bool = False) -> None:
+    state = resolve_stack(None)
+    stack_id = state["id"]
+
+    if not state["layers"]:
+        delete_stack(stack_id)
+        print(f"Stack '{stack_id}' had no PRs and was removed.")
+        return
+
+    state["status"] = "closed"
+    pr_states = refresh_stack_comments(state, verbose)
+    set_current_stack_id(None)
+
+    base = state["base_branch"]
+    if run_check(["git", "checkout", base]):
+        if verbose:
+            print(f"Switched back to '{base}'")
+    else:
+        print(f"Warning: Could not check out '{base}'", file=sys.stderr)
+
+    print(f"Stack '{stack_id}' closed with {len(state['layers'])} PR(s):")
+    for line in format_stack_tree(state, pr_states):
+        print(line)
+    print(f"After the bottom PR merges, run 'acp stack sync {stack_id}'.")
+
+
+def git_rebase_in_progress() -> bool:
+    for name in ("rebase-merge", "rebase-apply"):
+        path = run(["git", "rev-parse", "--git-path", name], quiet=True)
+        if Path(path).exists():
+            return True
+    return False
+
+
+def stack_sync(
+    stack_id: str | None = None, continue_sync: bool = False, verbose: bool = False
+) -> None:
+    """Drop merged layers, rebase the rest onto their new parents, push and retarget."""
+    state = resolve_stack(stack_id, allow_latest=True)
+    layers_by_n = {layer["n"]: layer for layer in state["layers"]}
+    progress = state.get("sync")
+
+    if continue_sync:
+        if progress is None:
+            fail(f"No interrupted sync to continue for stack '{state['id']}'")
+        if git_rebase_in_progress():
+            fail(
+                "A rebase is still in progress. Resolve conflicts, run "
+                "'git rebase --continue', then 'acp stack sync --continue'."
+            )
+        layer = layers_by_n[progress["n"]]
+        layer["parent_sha"] = progress["onto"]
+        layer["head_sha"] = run(["git", "rev-parse", layer["branch"]], quiet=True)
+        progress["rebased"].append(layer["n"])
+        resume_after = layer["n"]
+    else:
+        if progress is not None and git_rebase_in_progress():
+            fail(
+                "A previous sync stopped on a conflict. Finish it with "
+                "'acp stack sync --continue', or run 'git rebase --abort' first."
+            )
+        if not (
+            run_check(["git", "diff", "--quiet"])
+            and run_check(["git", "diff", "--cached", "--quiet"])
+        ):
+            fail("Commit or stash your changes before running 'acp stack sync'.")
+
+        if verbose:
+            print(f"Fetching '{state['base_branch']}' from '{state['base_remote']}'...")
+        if not run_check(
+            ["git", "fetch", "--quiet", state["base_remote"], state["base_branch"]]
+        ):
+            fail(
+                f"Could not fetch '{state['base_branch']}' from '{state['base_remote']}'"
+            )
+
+        pr_states = fetch_pr_states(state)
+        merged_now = []
+        for layer in state["layers"]:
+            if layer["merged"]:
+                continue
+            if pr_states.get(layer["n"]) != "MERGED":
+                break
+            layer["merged"] = True
+            merged_now.append(layer["n"])
+
+        for layer in state["layers"]:
+            if not layer["merged"] and pr_states.get(layer["n"]) == "MERGED":
+                print(
+                    f"Warning: #{layer['pr_number']} is merged but a PR below it is not",
+                    file=sys.stderr,
+                )
+
+        progress = {
+            "return_branch": run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True
+            ),
+            "merged_now": merged_now,
+            "rebased": [],
+        }
+        resume_after = 0
+
+    active = [layer for layer in state["layers"] if not layer["merged"]]
+    base_ref = f"{state['base_remote']}/{state['base_branch']}"
+
+    for i, layer in enumerate(active):
+        if layer["n"] <= resume_after:
+            continue
+        onto = run(
+            ["git", "rev-parse", base_ref if i == 0 else active[i - 1]["branch"]],
+            quiet=True,
+        )
+        if onto == layer["parent_sha"]:
+            continue
+
+        if verbose:
+            print(f"Rebasing '{layer['branch']}' onto {onto[:12]}...")
+        state["sync"] = {**progress, "n": layer["n"], "onto": onto}
+        save_stack(state)
+
+        rebase = subprocess.run(
+            [
+                "git",
+                "rebase",
+                "--quiet",
+                "--onto",
+                onto,
+                layer["parent_sha"],
+                layer["branch"],
+            ],
+            check=False,
+        )
+        if rebase.returncode != 0:
+            fail(
+                f"Rebase of '{layer['branch']}' stopped on a conflict. Resolve it, run "
+                "'git rebase --continue', then 'acp stack sync --continue'."
+            )
+
+        layer["parent_sha"] = onto
+        layer["head_sha"] = run(["git", "rev-parse", layer["branch"]], quiet=True)
+        progress["rebased"].append(layer["n"])
+
+    finish_stack_sync(state, progress, active, verbose)
+
+
+def finish_stack_sync(
+    state: dict[str, Any],
+    progress: dict[str, Any],
+    active: list[dict[str, Any]],
+    verbose: bool,
+) -> None:
+    rebased = set(progress["rebased"])
+    merged = [
+        layer for layer in state["layers"] if layer["n"] in progress["merged_now"]
+    ]
+
+    for layer in active:
+        if layer["n"] in rebased:
+            if verbose:
+                print(f"Force-pushing '{layer['branch']}'...")
+            run(
+                [
+                    "git",
+                    "push",
+                    "--quiet",
+                    "--force-with-lease",
+                    state["remote"],
+                    layer["branch"],
+                ],
+                quiet=True,
+            )
+
+    # Retarget before deleting merged branches, so GitHub never sees an open PR
+    # whose base branch is gone.
+    if state["mode"] == "stacked" and merged and active and active[0]["pr_number"]:
+        if verbose:
+            print(
+                f"Retargeting #{active[0]['pr_number']} to '{state['base_branch']}'..."
+            )
+        run_check(
+            [
+                "gh",
+                "pr",
+                "edit",
+                str(active[0]["pr_number"]),
+                "--repo",
+                state["repo"],
+                "--base",
+                state["base_branch"],
+            ]
+        )
+
+    for layer in merged:
+        if check_remote_branch_exists(state["head_repo"], layer["branch"]):
+            delete_remote_branch(state["head_repo"], layer["branch"], verbose)
+
+    merged_branches = {layer["branch"] for layer in merged}
+    return_branch = progress["return_branch"]
+    if return_branch in merged_branches:
+        return_branch = state["base_branch"]
+    run_check(["git", "checkout", return_branch])
+
+    for layer in merged:
+        delete_local_branch(layer["branch"], verbose)
+
+    state.pop("sync", None)
+    if not active:
+        state["status"] = "done"
+        if get_current_stack_id() == state["id"]:
+            set_current_stack_id(None)
+    save_stack(state)
+
+    pr_states = refresh_stack_comments(state, verbose)
+
+    print(
+        f"Stack '{state['id']}' synced: {len(merged)} merged layer(s) removed, "
+        f"{len(rebased)} layer(s) rebased."
+    )
+    for line in format_stack_tree(state, pr_states):
+        print(line)
+    if not active:
+        print("Every PR in the stack is merged.")
+
+
+def run_stack_command(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> None:
+    if args.stack_command == "start":
+        stack_start(draft=args.draft, reviewers=args.reviewers, verbose=args.verbose)
+    elif args.stack_command == "status":
+        stack_status(args.stack_id, verbose=args.verbose)
+    elif args.stack_command == "end":
+        stack_end(verbose=args.verbose)
+    elif args.stack_command == "sync":
+        stack_sync(
+            args.stack_id, continue_sync=args.continue_sync, verbose=args.verbose
+        )
+    elif args.stack_command == "abort":
+        stack_abort(args.stack_id)
+    else:
+        parser.print_help()
+        sys.exit(0)
+
+
 class _NoFilesCompleter:
     suppress = True
 
@@ -919,6 +1753,69 @@ examples:
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
 
+    stack_parser = subparsers.add_parser("stack", help="Manage stacked PRs")
+    stack_subparsers = stack_parser.add_subparsers(dest="stack_command")
+
+    stack_start_parser = stack_subparsers.add_parser(
+        "start", help="Start a stack on the current branch"
+    )
+    stack_start_parser.add_argument(
+        "-d",
+        "--draft",
+        action="store_true",
+        help="Create every PR in the stack as a draft",
+    )
+    stack_start_parser.add_argument(
+        "-r",
+        "--reviewers",
+        type=str,
+        default=None,
+        help="Comma-separated list of reviewers for every PR in the stack",
+    )
+    stack_start_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_status_parser = stack_subparsers.add_parser(
+        "status", help="Show stack topology and PR states"
+    )
+    stack_status_parser.add_argument(
+        "stack_id", nargs="?", help=argparse.SUPPRESS
+    ).completer = _no_files  # type: ignore[attr-defined]
+    stack_status_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_end_parser = stack_subparsers.add_parser(
+        "end", help="Finalize stack comments and return to the base branch"
+    )
+    stack_end_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_sync_parser = stack_subparsers.add_parser(
+        "sync", help="Drop merged PRs, rebase the rest and retarget them"
+    )
+    stack_sync_parser.add_argument(
+        "stack_id", nargs="?", help=argparse.SUPPRESS
+    ).completer = _no_files  # type: ignore[attr-defined]
+    stack_sync_parser.add_argument(
+        "--continue",
+        dest="continue_sync",
+        action="store_true",
+        help="Continue a sync that stopped on a rebase conflict",
+    )
+    stack_sync_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_abort_parser = stack_subparsers.add_parser(
+        "abort", help="Forget local stack state, leave PRs and branches untouched"
+    )
+    stack_abort_parser.add_argument(
+        "stack_id", nargs="?", help=argparse.SUPPRESS
+    ).completer = _no_files  # type: ignore[attr-defined]
+
     argcomplete.autocomplete(parser, default_completer=_no_files)  # type: ignore[arg-type]
     args = parser.parse_args()
 
@@ -933,6 +1830,8 @@ examples:
             sync_fork(branch=args.branch, verbose=args.verbose)
         elif args.command == "branches":
             list_branches(show_all=args.all, verbose=args.verbose)
+        elif args.command == "stack":
+            run_stack_command(args, stack_parser)
         elif args.command == "checkout":
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)

@@ -54,6 +54,7 @@ assert_has "$completions" "checkout" "acp <TAB>"
 assert_has "$completions" "branches" "acp <TAB>"
 assert_has "$completions" "sync" "acp <TAB>"
 assert_has "$completions" "pull" "acp <TAB>"
+assert_has "$completions" "stack" "acp <TAB>"
 assert_not_has "$completions" ".py" "acp <TAB> (no files)"
 pass "acp <TAB>: shows subcommands, no files"
 
@@ -141,6 +142,33 @@ assert_has "$completions" "--verbose" "acp pull -<TAB>"
 assert_has "$completions" "-v" "acp pull -<TAB>"
 assert_not_has "$completions" "--merge" "acp pull -<TAB> (no pr options)"
 pass "acp pull -<TAB>: shows pull options, no other options leak"
+
+# =============================================================================
+# Stack subcommand: "acp stack <TAB>" and its subcommands
+# =============================================================================
+
+completions=$(get_completions "acp stack ")
+for sub in start status end sync abort; do
+    assert_has "$completions" "$sub" "acp stack <TAB>"
+done
+assert_not_has "$completions" ".py" "acp stack <TAB> (no files)"
+pass "acp stack <TAB>: shows stack subcommands, no files"
+
+completions=$(get_completions "acp stack start -")
+assert_has "$completions" "--draft" "acp stack start -<TAB>"
+assert_has "$completions" "--reviewers" "acp stack start -<TAB>"
+assert_has "$completions" "--verbose" "acp stack start -<TAB>"
+assert_not_has "$completions" "--merge" "acp stack start -<TAB> (no pr options)"
+pass "acp stack start -<TAB>: shows start options"
+
+completions=$(get_completions "acp stack sync -")
+assert_has "$completions" "--continue" "acp stack sync -<TAB>"
+assert_has "$completions" "--verbose" "acp stack sync -<TAB>"
+pass "acp stack sync -<TAB>: shows sync options"
+
+completions=$(get_completions "acp stack status ")
+assert_not_has "$completions" ".py" "acp stack status <TAB> (no files)"
+pass "acp stack status <TAB>: no file completions"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"

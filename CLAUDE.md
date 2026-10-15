@@ -84,6 +84,8 @@ The codebase is a single-file CLI tool (`acp.py`) with tests (`test_acp.py`).
 - `create_github_pr()` - PR creation via GitHub CLI
 - `merge_pr()` / `enable_auto_merge()` - Post-creation merge handling
 - `cleanup_branches_after_merge()` - Remove temporary branches after merge
+- `stack_start()` / `create_stack_layer()` / `stack_end()` / `stack_sync()` - Stacked PRs,
+  state in `.git/acp/stacks/<id>.json` (see `docs/stacking.md`)
 
 ### Fork Handling
 

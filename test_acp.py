@@ -8,6 +8,14 @@ import pytest
 import acp
 
 
+@pytest.fixture(autouse=True)
+def stack_root(tmp_path, monkeypatch):
+    """Keep stack state in a per-test directory instead of the real .git."""
+    root = tmp_path / "acp-state"
+    monkeypatch.setattr(acp, "get_stack_root", lambda: root)
+    return root
+
+
 class TestRunCommand:
     def test_run_success(self):
         with mock.patch("subprocess.run") as mock_run:
@@ -1821,3 +1829,748 @@ class TestPullCommand:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def make_stack(**overrides):
+    state = {
+        "id": "abc123",
+        "status": "open",
+        "mode": "stacked",
+        "repo": "owner/repo",
+        "head_repo": "owner/repo",
+        "remote": "origin",
+        "base_remote": "origin",
+        "base_branch": "main",
+        "base_sha": "base000",
+        "gh_user": "testuser",
+        "defaults": {"draft": False, "reviewers": None},
+        "layers": [],
+    }
+    state.update(overrides)
+    return state
+
+
+def make_layer(n, pr_number=None, **overrides):
+    layer = {
+        "n": n,
+        "branch": f"users/testuser/acp-abc123-{n}",
+        "parent_sha": f"sha{n - 1}",
+        "head_sha": f"sha{n}",
+        "pr_number": pr_number,
+        "title": f"feat: part {n}",
+        "comment_id": None,
+        "merged": False,
+    }
+    layer.update(overrides)
+    return layer
+
+
+class TestIsAcpBranch:
+    def test_temp_branch(self):
+        assert acp.is_acp_branch("acp/user/1234567890123456")
+
+    def test_stack_branch(self):
+        assert acp.is_acp_branch("users/user/acp-abc123-1")
+
+    def test_other_user_branch(self):
+        assert not acp.is_acp_branch("users/user/my-feature")
+
+    def test_regular_branch(self):
+        assert not acp.is_acp_branch("main")
+
+    def test_list_branches_includes_stack_branches(self, capsys):
+        prs = [
+            {"headRefName": "users/u/acp-abc123-1", "title": "t", "number": 3},
+            {"headRefName": "users/u/feature", "title": "x", "number": 4},
+        ]
+        with mock.patch("subprocess.run") as mock_run:
+            mock_run.return_value = mock.Mock(returncode=0, stdout=json.dumps(prs))
+            acp.list_branches()
+        out = capsys.readouterr().out
+        assert "users/u/acp-abc123-1 -> #3" in out
+        assert "users/u/feature" not in out
+
+
+class TestStackState:
+    def test_no_current_stack(self):
+        assert acp.load_current_stack() is None
+
+    def test_save_and_load(self):
+        state = make_stack()
+        acp.save_stack(state)
+        acp.set_current_stack_id("abc123")
+        assert acp.load_current_stack() == state
+
+    def test_delete_clears_current(self):
+        acp.save_stack(make_stack())
+        acp.set_current_stack_id("abc123")
+        acp.delete_stack("abc123")
+        assert acp.load_stack("abc123") is None
+        assert acp.get_current_stack_id() is None
+
+    def test_resolve_by_id(self):
+        acp.save_stack(make_stack())
+        assert acp.resolve_stack("abc123")["id"] == "abc123"
+
+    def test_resolve_unknown_id(self, capsys):
+        with pytest.raises(SystemExit):
+            acp.resolve_stack("nope")
+        assert "Stack 'nope' not found" in capsys.readouterr().err
+
+    def test_resolve_without_open_stack(self, capsys):
+        with pytest.raises(SystemExit):
+            acp.resolve_stack(None)
+        assert "No open stack" in capsys.readouterr().err
+
+    def test_resolve_latest_unfinished(self):
+        acp.save_stack(make_stack(id="done01", status="done"))
+        acp.save_stack(make_stack(id="clsd01", status="closed"))
+        assert acp.resolve_stack(None, allow_latest=True)["id"] == "clsd01"
+
+    def test_stack_branch_name(self):
+        assert acp.stack_branch_name("u", "abc123", 2) == "users/u/acp-abc123-2"
+
+
+class TestPrState:
+    @mock.patch("subprocess.run")
+    def test_draft(self, mock_run):
+        mock_run.return_value = mock.Mock(
+            returncode=0, stdout='{"state": "OPEN", "isDraft": true}'
+        )
+        assert acp.get_pr_state("o/r", 1) == "DRAFT"
+
+    @mock.patch("subprocess.run")
+    def test_merged(self, mock_run):
+        mock_run.return_value = mock.Mock(
+            returncode=0, stdout='{"state": "MERGED", "isDraft": false}'
+        )
+        assert acp.get_pr_state("o/r", 1) == "MERGED"
+
+    @mock.patch("subprocess.run")
+    def test_failure(self, mock_run):
+        mock_run.return_value = mock.Mock(returncode=1, stdout="")
+        assert acp.get_pr_state("o/r", 1) == "UNKNOWN"
+
+
+class TestStackStart:
+    def _start(self, is_fork=False, can_push=True, branch="main", **kwargs):
+        repo_info = (
+            ("me/repo", "up/repo", True) if is_fork else ("me/repo", "me/repo", False)
+        )
+        with (
+            mock.patch("acp.run", side_effect=[branch, "base000"]),
+            mock.patch("acp.get_repo_info", return_value=repo_info),
+            mock.patch("acp.can_push_to_repo", return_value=can_push),
+            mock.patch("acp.check_remote_branch_exists", return_value=True),
+            mock.patch("acp.get_gh_user", return_value="me"),
+            mock.patch("acp.generate_stack_id", return_value="abc123"),
+        ):
+            acp.stack_start(**kwargs)
+        return acp.load_current_stack()
+
+    def test_non_fork(self, capsys):
+        state = self._start()
+        assert state["mode"] == "stacked"
+        assert state["remote"] == "origin"
+        assert state["repo"] == "me/repo"
+        assert state["base_branch"] == "main"
+        assert state["base_sha"] == "base000"
+        assert "Stack 'abc123' started on 'main'" in capsys.readouterr().out
+
+    def test_fork_with_push_access(self):
+        state = self._start(is_fork=True, can_push=True)
+        assert state["mode"] == "stacked"
+        assert state["remote"] == "upstream"
+        assert state["head_repo"] == "up/repo"
+        assert state["base_remote"] == "upstream"
+
+    def test_fork_without_push_access(self, capsys):
+        state = self._start(is_fork=True, can_push=False)
+        assert state["mode"] == "fallback"
+        assert state["remote"] == "origin"
+        assert state["head_repo"] == "me/repo"
+        assert state["repo"] == "up/repo"
+        assert "no push access" in capsys.readouterr().out
+
+    def test_defaults_saved(self):
+        state = self._start(draft=True, reviewers="a,b")
+        assert state["defaults"] == {"draft": True, "reviewers": "a,b"}
+
+    def test_already_open(self, capsys):
+        acp.save_stack(make_stack())
+        acp.set_current_stack_id("abc123")
+        with pytest.raises(SystemExit):
+            acp.stack_start()
+        assert "already open" in capsys.readouterr().err
+
+    def test_on_acp_branch(self, capsys):
+        with (
+            mock.patch("acp.run", return_value="users/me/acp-xyz-1"),
+            pytest.raises(SystemExit),
+        ):
+            acp.stack_start()
+        assert "Already on an ACP branch" in capsys.readouterr().err
+
+    def test_base_missing_on_remote(self, capsys):
+        with (
+            mock.patch("acp.run", return_value="local-only"),
+            mock.patch("acp.get_repo_info", return_value=("me/r", "me/r", False)),
+            mock.patch("acp.check_remote_branch_exists", return_value=False),
+            pytest.raises(SystemExit),
+        ):
+            acp.stack_start()
+        assert "does not exist in 'me/r'" in capsys.readouterr().err
+
+
+class TestStackStatus:
+    def test_no_stacks(self, capsys):
+        acp.stack_status()
+        assert "No stacks found." in capsys.readouterr().out
+
+    def test_lists_stacks_when_none_open(self, capsys):
+        acp.save_stack(make_stack(status="closed", layers=[make_layer(1, 5)]))
+        acp.stack_status()
+        assert "abc123 [closed] base 'main', 1 layer(s)" in capsys.readouterr().out
+
+    def test_shows_tree(self, capsys):
+        acp.save_stack(make_stack(layers=[make_layer(1, 5), make_layer(2, 6)]))
+        acp.set_current_stack_id("abc123")
+        with (
+            mock.patch("acp.get_pr_state", side_effect=["MERGED", "OPEN"]),
+            mock.patch("acp.run", return_value="users/testuser/acp-abc123-2"),
+        ):
+            acp.stack_status()
+        out = capsys.readouterr().out
+        assert "└─ #5 feat: part 1 [merged]" in out
+        assert "   └─ #6 feat: part 2 [open]" in out
+        assert "acp-abc123-2  <- HEAD" in out
+
+
+class TestStackAbort:
+    def test_abort(self, capsys):
+        acp.save_stack(make_stack())
+        acp.set_current_stack_id("abc123")
+        acp.stack_abort()
+        assert acp.load_stack("abc123") is None
+        assert "aborted" in capsys.readouterr().out
+
+    def test_abort_without_stack(self):
+        with pytest.raises(SystemExit):
+            acp.stack_abort()
+
+
+class TestStackCommand:
+    @mock.patch("acp.stack_start")
+    def test_start(self, mock_start):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "start", "-d", "-r", "a"]):
+            acp.main()
+        mock_start.assert_called_once_with(draft=True, reviewers="a", verbose=False)
+
+    @mock.patch("acp.stack_status")
+    def test_status_with_id(self, mock_status):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "status", "abc123"]):
+            acp.main()
+        mock_status.assert_called_once_with("abc123", verbose=False)
+
+    @mock.patch("acp.stack_abort")
+    def test_abort(self, mock_abort):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "abort"]):
+            acp.main()
+        mock_abort.assert_called_once_with(None)
+
+    def test_no_subcommand(self, capsys):
+        with (
+            mock.patch.object(sys, "argv", ["acp", "stack"]),
+            pytest.raises(SystemExit) as exc,
+        ):
+            acp.main()
+        assert exc.value.code == 0
+
+
+class TestCreateStackLayer:
+    def _open_stack(self, **overrides):
+        state = make_stack(**overrides)
+        acp.save_stack(state)
+        acp.set_current_stack_id(state["id"])
+        return state
+
+    def _create(
+        self, head="main", url="https://github.com/owner/repo/pull/7", **kwargs
+    ):
+        with (
+            mock.patch("acp.run", side_effect=[head, "parentsha", None, "newsha"]),
+            mock.patch("acp.run_check", return_value=False),
+            mock.patch("acp.run_interactive") as mock_interactive,
+            mock.patch("acp.create_github_pr", return_value=url) as mock_pr,
+            mock.patch("acp.refresh_stack_comments") as mock_refresh,
+        ):
+            acp.create_pr("feat: layer", **kwargs)
+        return mock_interactive, mock_pr, mock_refresh
+
+    def test_create_pr_delegates_to_stack(self):
+        self._open_stack()
+        with mock.patch("acp.create_stack_layer") as mock_layer:
+            acp.create_pr("feat: layer", draft=True)
+        assert mock_layer.call_args.kwargs["draft"] is True
+
+    def test_first_layer_targets_base(self, capsys):
+        self._open_stack()
+        mock_interactive, mock_pr, mock_refresh = self._create()
+
+        push = mock_interactive.call_args_list[1][0][0]
+        assert push == [
+            "git",
+            "push",
+            "--quiet",
+            "-u",
+            "origin",
+            "users/testuser/acp-abc123-1",
+        ]
+        assert mock_pr.call_args.kwargs["base"] == "main"
+        assert mock_pr.call_args[0][5] is False  # same-repo head
+
+        layer = acp.load_stack("abc123")["layers"][0]
+        assert layer["pr_number"] == 7
+        assert layer["parent_sha"] == "parentsha"
+        assert layer["head_sha"] == "newsha"
+        mock_refresh.assert_called_once()
+        assert "layer 1 of stack 'abc123'" in capsys.readouterr().out
+
+    def test_second_layer_targets_previous_layer(self):
+        self._open_stack(layers=[make_layer(1, 5)])
+        _, mock_pr, _ = self._create(head="users/testuser/acp-abc123-1")
+        assert mock_pr.call_args[0][2] == "users/testuser/acp-abc123-2"
+        assert mock_pr.call_args.kwargs["base"] == "users/testuser/acp-abc123-1"
+
+    def test_fallback_targets_base_from_fork(self):
+        self._open_stack(
+            mode="fallback",
+            repo="up/repo",
+            head_repo="me/repo",
+            layers=[make_layer(1, 5)],
+        )
+        _, mock_pr, _ = self._create(head="users/testuser/acp-abc123-1")
+        assert mock_pr.call_args.kwargs["base"] == "main"
+        assert mock_pr.call_args[0][5] is True  # cross-repo head
+
+    def test_stack_defaults_apply(self):
+        self._open_stack(defaults={"draft": True, "reviewers": "alice"})
+        _, mock_pr, _ = self._create()
+        assert mock_pr.call_args[0][7] == "alice"
+        assert mock_pr.call_args[0][8] is True
+
+    def test_head_not_at_tip(self, capsys):
+        self._open_stack(layers=[make_layer(1, 5)])
+        with (
+            mock.patch("acp.run", return_value="main"),
+            pytest.raises(SystemExit),
+        ):
+            acp.create_pr("feat: layer")
+        assert "its tip is 'users/testuser/acp-abc123-1'" in capsys.readouterr().err
+
+    def test_no_staged_changes(self, capsys):
+        self._open_stack()
+        with (
+            mock.patch("acp.run", return_value="main"),
+            mock.patch("acp.run_check", return_value=True),
+            pytest.raises(SystemExit),
+        ):
+            acp.create_pr("feat: layer")
+        assert "No staged changes" in capsys.readouterr().err
+
+    def test_merge_rejected(self, capsys):
+        self._open_stack()
+        with pytest.raises(SystemExit):
+            acp.create_pr("feat: layer", merge=True)
+        assert "--merge is not supported inside a stack" in capsys.readouterr().err
+
+    def test_auto_merge_rejected_above_bottom(self, capsys):
+        self._open_stack(layers=[make_layer(1, 5)])
+        with pytest.raises(SystemExit):
+            acp.create_pr("feat: layer", auto_merge=True)
+        assert "only allowed on the bottom PR" in capsys.readouterr().err
+
+    def test_auto_merge_on_bottom(self):
+        self._open_stack()
+        with mock.patch("acp.enable_auto_merge") as mock_auto:
+            self._create(auto_merge=True)
+        mock_auto.assert_called_once()
+
+    def test_interactive_prints_compare_url(self, capsys):
+        self._open_stack(layers=[make_layer(1, 5)])
+        _, mock_pr, _ = self._create(
+            head="users/testuser/acp-abc123-1", interactive=True
+        )
+        mock_pr.assert_not_called()
+        assert (
+            "https://github.com/owner/repo/compare/users/testuser/acp-abc123-1"
+            "...users/testuser/acp-abc123-2?expand=1"
+        ) in capsys.readouterr().out
+        assert acp.load_stack("abc123")["layers"][1]["pr_number"] is None
+
+    def test_push_failure_rolls_back(self, capsys):
+        self._open_stack()
+        with (
+            mock.patch("acp.run", side_effect=["main", "parentsha", None]),
+            mock.patch("acp.run_check", return_value=False) as mock_check,
+            mock.patch("acp.run_interactive", side_effect=[None, SystemExit(1)]),
+            pytest.raises(SystemExit),
+        ):
+            acp.create_pr("feat: layer")
+
+        cmds = [c[0][0] for c in mock_check.call_args_list]
+        assert ["git", "reset", "--soft", "parentsha"] in cmds
+        assert ["git", "checkout", "main"] in cmds
+        assert ["git", "branch", "-D", "users/testuser/acp-abc123-1"] in cmds
+        assert not any("--delete" in c for c in cmds)
+        assert acp.load_stack("abc123")["layers"] == []
+
+    def test_pr_failure_deletes_pushed_branch(self):
+        self._open_stack()
+        with (
+            mock.patch("acp.run", side_effect=["main", "parentsha", None]),
+            mock.patch("acp.run_check", return_value=False) as mock_check,
+            mock.patch("acp.run_interactive"),
+            mock.patch("acp.create_github_pr", side_effect=SystemExit(1)),
+            pytest.raises(SystemExit),
+        ):
+            acp.create_pr("feat: layer")
+        cmds = [c[0][0] for c in mock_check.call_args_list]
+        assert [
+            "git",
+            "push",
+            "--quiet",
+            "origin",
+            "--delete",
+            "users/testuser/acp-abc123-1",
+        ] in cmds
+
+
+class TestCreateGithubPrBase:
+    @mock.patch("acp.run", return_value="url")
+    def test_base_flag(self, mock_run):
+        acp.create_github_pr("o/r", "o/r", "b", "m", "", False, False, base="parent")
+        cmd = mock_run.call_args[0][0]
+        assert cmd[cmd.index("--base") + 1] == "parent"
+
+    @mock.patch("acp.run", return_value="url")
+    def test_no_base_flag_by_default(self, mock_run):
+        acp.create_github_pr("o/r", "o/r", "b", "m", "", False, False)
+        assert "--base" not in mock_run.call_args[0][0]
+
+
+class TestStackComment:
+    def test_render_highlights_current(self):
+        state = make_stack(
+            layers=[make_layer(1, 5), make_layer(2, 6), make_layer(3, 7)]
+        )
+        body = acp.render_stack_comment(state, {1: "MERGED", 2: "OPEN", 3: "DRAFT"}, 2)
+        lines = body.splitlines()
+        assert lines[0] == "<!-- acp-stack:abc123 -->"
+        assert "  - ~~#5 feat: part 1~~ (merged)" in lines
+        assert "    - **#6 feat: part 2** ← this PR" in lines
+        assert "      - #7 feat: part 3 (draft)" in lines
+        assert "still in progress" in body
+
+    def test_render_closed_stack(self):
+        state = make_stack(status="closed", layers=[make_layer(1, 5)])
+        assert "still in progress" not in acp.render_stack_comment(state, {}, 1)
+
+    def test_render_fallback_links_own_commit(self):
+        state = make_stack(mode="fallback", repo="up/repo", layers=[make_layer(1, 5)])
+        body = acp.render_stack_comment(state, {}, 1)
+        assert "https://github.com/up/repo/pull/5/commits/sha1" in body
+        assert "Review only the last commit" in body
+
+    def test_render_layer_without_pr(self):
+        state = make_stack(layers=[make_layer(1)])
+        body = acp.render_stack_comment(state, {}, 0)
+        assert "`users/testuser/acp-abc123-1` feat: part 1 (no PR yet)" in body
+
+    @mock.patch("subprocess.run")
+    def test_upsert_patches_existing(self, mock_run):
+        mock_run.return_value = mock.Mock(returncode=0, stdout="99")
+        assert acp.upsert_stack_comment("o/r", 5, "m", "body", 99) == 99
+        cmd = mock_run.call_args[0][0]
+        assert "PATCH" in cmd
+        assert "repos/o/r/issues/comments/99" in cmd
+
+    @mock.patch("subprocess.run")
+    def test_upsert_finds_by_marker_then_creates(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout=""),  # search finds nothing
+            mock.Mock(returncode=0, stdout="123\n"),  # create
+        ]
+        assert acp.upsert_stack_comment("o/r", 5, "m", "body", None) == 123
+        assert "repos/o/r/issues/5/comments" in mock_run.call_args[0][0]
+
+    @mock.patch("subprocess.run")
+    def test_upsert_recreates_deleted_comment(self, mock_run):
+        mock_run.side_effect = [
+            mock.Mock(returncode=1, stdout=""),  # PATCH on a deleted comment
+            mock.Mock(returncode=0, stdout="124"),
+        ]
+        assert acp.upsert_stack_comment("o/r", 5, "m", "body", 99) == 124
+
+    @mock.patch("subprocess.run")
+    def test_upsert_create_failure_warns(self, mock_run, capsys):
+        mock_run.side_effect = [
+            mock.Mock(returncode=0, stdout=""),
+            mock.Mock(returncode=1, stdout="", stderr="forbidden"),
+        ]
+        assert acp.upsert_stack_comment("o/r", 5, "m", "body", None) is None
+        assert "Could not post stack comment" in capsys.readouterr().err
+
+    def test_refresh_updates_every_pr(self):
+        state = make_stack(layers=[make_layer(1, 5), make_layer(2)])
+        with (
+            mock.patch("acp.find_pr_number", return_value=6),
+            mock.patch("acp.get_pr_state", return_value="OPEN"),
+            mock.patch("acp.upsert_stack_comment", side_effect=[11, 12]) as mock_upsert,
+        ):
+            acp.refresh_stack_comments(state)
+        assert [c[0][1] for c in mock_upsert.call_args_list] == [5, 6]
+        saved = acp.load_stack("abc123")["layers"]
+        assert [layer["comment_id"] for layer in saved] == [11, 12]
+        assert saved[1]["pr_number"] == 6
+
+
+class TestStackEnd:
+    def test_end_without_stack(self):
+        with pytest.raises(SystemExit):
+            acp.stack_end()
+
+    def test_end_empty_stack(self, capsys):
+        acp.save_stack(make_stack())
+        acp.set_current_stack_id("abc123")
+        acp.stack_end()
+        assert acp.load_stack("abc123") is None
+        assert "had no PRs" in capsys.readouterr().out
+
+    def test_end_closes_stack(self, capsys):
+        acp.save_stack(make_stack(layers=[make_layer(1, 5), make_layer(2, 6)]))
+        acp.set_current_stack_id("abc123")
+        with (
+            mock.patch("acp.refresh_stack_comments", return_value={}) as mock_refresh,
+            mock.patch("acp.run_check", return_value=True) as mock_check,
+        ):
+            acp.stack_end()
+
+        assert mock_refresh.call_args[0][0]["status"] == "closed"
+        mock_check.assert_called_once_with(["git", "checkout", "main"])
+        assert acp.get_current_stack_id() is None
+        out = capsys.readouterr().out
+        assert "closed with 2 PR(s)" in out
+        assert "acp stack sync abc123" in out
+
+
+class FakeGit:
+    """Answer the git/gh calls made by stack_sync from a small table."""
+
+    def __init__(self, shas, head="main", clean=True, rebase_fails=()):
+        self.shas = shas
+        self.head = head
+        self.clean = clean
+        self.rebase_fails = set(rebase_fails)
+        self.rebases = []
+        self.pushes = []
+        self.checks = []
+
+    def run(self, cmd, quiet=False):
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return self.head
+        if cmd[:3] == ["git", "rev-parse", "--git-path"]:
+            return "/nonexistent/" + cmd[3]
+        if cmd[:2] == ["git", "rev-parse"]:
+            return self.shas[cmd[2]]
+        if cmd[:2] == ["git", "push"]:
+            self.pushes.append(cmd[-1])
+            return ""
+        raise AssertionError(cmd)
+
+    def run_check(self, cmd):
+        self.checks.append(cmd)
+        if cmd[:2] == ["git", "diff"]:
+            return self.clean
+        return True
+
+    def subprocess_run(self, cmd, **kwargs):
+        branch = cmd[-1]
+        self.rebases.append((cmd[-3], cmd[-2], branch))
+        if branch in self.rebase_fails:
+            return mock.Mock(returncode=1)
+        self.shas[branch] = f"rebased-{branch[-1]}"
+        return mock.Mock(returncode=0)
+
+
+class TestStackSync:
+    B1 = "users/testuser/acp-abc123-1"
+    B2 = "users/testuser/acp-abc123-2"
+    B3 = "users/testuser/acp-abc123-3"
+
+    def _save(self, **overrides):
+        layers = [make_layer(1, 5), make_layer(2, 6), make_layer(3, 7)]
+        acp.save_stack(make_stack(status="closed", layers=layers, **overrides))
+
+    def _sync(self, fake, pr_states, continue_sync=False):
+        with (
+            mock.patch("acp.run", side_effect=fake.run),
+            mock.patch("acp.run_check", side_effect=fake.run_check),
+            mock.patch("subprocess.run", side_effect=fake.subprocess_run),
+            mock.patch("acp.get_pr_state", side_effect=lambda r, n: pr_states[n]),
+            mock.patch("acp.check_remote_branch_exists", return_value=True),
+            mock.patch("acp.delete_remote_branch") as mock_del_remote,
+            mock.patch("acp.delete_local_branch") as mock_del_local,
+            mock.patch("acp.refresh_stack_comments", return_value={}) as mock_refresh,
+        ):
+            acp.stack_sync("abc123", continue_sync=continue_sync)
+        return mock_del_remote, mock_del_local, mock_refresh
+
+    def _shas(self, main="newmain"):
+        return {"origin/main": main, self.B1: "sha1", self.B2: "sha2", self.B3: "sha3"}
+
+    def test_bottom_merged(self):
+        self._save()
+        fake = FakeGit(self._shas(), head=self.B3)
+        del_remote, del_local, refresh = self._sync(
+            fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"}
+        )
+
+        assert fake.rebases == [
+            ("newmain", "sha1", self.B2),
+            ("rebased-2", "sha2", self.B3),
+        ]
+        assert fake.pushes == [self.B2, self.B3]
+        assert ["gh", "pr", "edit", "6", "--repo", "owner/repo", "--base", "main"] in (
+            fake.checks
+        )
+        del_remote.assert_called_once_with("owner/repo", self.B1, False)
+        del_local.assert_called_once_with(self.B1, False)
+        assert ["git", "checkout", self.B3] in fake.checks
+
+        state = acp.load_stack("abc123")
+        assert state["layers"][0]["merged"] is True
+        assert state["layers"][1]["parent_sha"] == "newmain"
+        assert state["layers"][2]["parent_sha"] == "rebased-2"
+        assert "sync" not in state
+        refresh.assert_called_once()
+
+    def test_nothing_changed(self):
+        self._save()
+        fake = FakeGit(self._shas(main="sha0"))
+        del_remote, _, _ = self._sync(fake, {5: "OPEN", 6: "OPEN", 7: "OPEN"})
+        assert fake.rebases == []
+        assert fake.pushes == []
+        del_remote.assert_not_called()
+
+    def test_base_moved_rebases_whole_stack(self):
+        self._save()
+        fake = FakeGit(self._shas())
+        self._sync(fake, {5: "OPEN", 6: "OPEN", 7: "OPEN"})
+        assert [r[2] for r in fake.rebases] == [self.B1, self.B2, self.B3]
+        assert not any(c[:3] == ["gh", "pr", "edit"] for c in fake.checks)
+
+    def test_fallback_does_not_retarget(self):
+        self._save(mode="fallback", repo="up/repo", head_repo="me/repo")
+        fake = FakeGit(self._shas())
+        del_remote, _, _ = self._sync(fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"})
+        assert not any(c[:3] == ["gh", "pr", "edit"] for c in fake.checks)
+        del_remote.assert_called_once_with("me/repo", self.B1, False)
+
+    def test_return_to_base_when_head_was_merged(self):
+        self._save()
+        fake = FakeGit(self._shas(), head=self.B1)
+        self._sync(fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"})
+        assert fake.checks[-1] == ["git", "checkout", "main"]
+
+    def test_all_merged(self, capsys):
+        self._save()
+        acp.set_current_stack_id("abc123")
+        fake = FakeGit(self._shas())
+        self._sync(fake, {5: "MERGED", 6: "MERGED", 7: "MERGED"})
+        assert acp.load_stack("abc123")["status"] == "done"
+        assert acp.get_current_stack_id() is None
+        assert "Every PR in the stack is merged." in capsys.readouterr().out
+
+    def test_dirty_worktree(self, capsys):
+        self._save()
+        with pytest.raises(SystemExit):
+            self._sync(FakeGit(self._shas(), clean=False), {})
+        assert "Commit or stash" in capsys.readouterr().err
+
+    def test_conflict_then_continue(self, capsys):
+        self._save()
+        fake = FakeGit(self._shas(), head=self.B3, rebase_fails={self.B2})
+        with pytest.raises(SystemExit):
+            self._sync(fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"})
+        assert "acp stack sync --continue" in capsys.readouterr().err
+
+        progress = acp.load_stack("abc123")["sync"]
+        assert progress["n"] == 2
+        assert progress["onto"] == "newmain"
+        assert progress["merged_now"] == [1]
+
+        fake.rebase_fails = set()
+        fake.shas[self.B2] = "resolved-2"
+        self._sync(fake, {}, continue_sync=True)
+
+        assert fake.rebases[-1] == ("resolved-2", "sha2", self.B3)
+        assert fake.pushes == [self.B2, self.B3]
+        state = acp.load_stack("abc123")
+        assert state["layers"][1]["parent_sha"] == "newmain"
+        assert "sync" not in state
+
+    def test_continue_without_progress(self, capsys):
+        self._save()
+        with pytest.raises(SystemExit):
+            self._sync(FakeGit(self._shas()), {}, continue_sync=True)
+        assert "No interrupted sync" in capsys.readouterr().err
+
+    def test_continue_while_rebase_in_progress(self, capsys):
+        self._save()
+        state = acp.load_stack("abc123")
+        state["sync"] = {
+            "n": 2,
+            "onto": "x",
+            "merged_now": [],
+            "rebased": [],
+            "return_branch": "main",
+        }
+        acp.save_stack(state)
+        with (
+            mock.patch("acp.git_rebase_in_progress", return_value=True),
+            pytest.raises(SystemExit),
+        ):
+            acp.stack_sync("abc123", continue_sync=True)
+        assert "still in progress" in capsys.readouterr().err
+
+    def test_latest_stack_used_without_id(self):
+        self._save()
+        with mock.patch("acp.finish_stack_sync"):
+            fake = FakeGit(self._shas(main="sha0"))
+            with (
+                mock.patch("acp.run", side_effect=fake.run),
+                mock.patch("acp.run_check", side_effect=fake.run_check),
+                mock.patch("acp.get_pr_state", return_value="OPEN"),
+            ):
+                acp.stack_sync()
+
+
+class TestStackEndSyncCommand:
+    @mock.patch("acp.stack_end")
+    def test_end(self, mock_end):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "end", "-v"]):
+            acp.main()
+        mock_end.assert_called_once_with(verbose=True)
+
+    @mock.patch("acp.stack_sync")
+    def test_sync_continue(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "sync", "--continue"]):
+            acp.main()
+        mock_sync.assert_called_once_with(None, continue_sync=True, verbose=False)
+
+    @mock.patch("acp.stack_sync")
+    def test_sync_with_id(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "sync", "abc123"]):
+            acp.main()
+        mock_sync.assert_called_once_with("abc123", continue_sync=False, verbose=False)
