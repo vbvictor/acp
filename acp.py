@@ -970,7 +970,8 @@ def format_stack_tree(
     for depth, layer in enumerate(state["layers"]):
         indent = "   " * depth
         pr = f"#{layer['pr_number']}" if layer.get("pr_number") else "(no PR)"
-        pr_state = pr_states.get(layer["n"], "UNKNOWN").lower()
+        fallback_state = "MERGED" if layer.get("merged") else "UNKNOWN"
+        pr_state = pr_states.get(layer["n"], fallback_state).lower()
         line = f"{indent}└─ {pr} {layer['title']} [{pr_state}] {layer['branch']}"
         if layer["branch"] == head_branch:
             line += "  <- HEAD"
@@ -1230,7 +1231,9 @@ def upsert_stack_comment(
     return int(create.stdout.strip())
 
 
-def refresh_stack_comments(state: dict[str, Any], verbose: bool = False) -> None:
+def refresh_stack_comments(
+    state: dict[str, Any], verbose: bool = False
+) -> dict[int, str]:
     for layer in state["layers"]:
         if not layer.get("pr_number"):
             layer["pr_number"] = find_pr_number(state, layer["branch"])
@@ -1249,6 +1252,7 @@ def refresh_stack_comments(state: dict[str, Any], verbose: bool = False) -> None
         )
 
     save_stack(state)
+    return pr_states
 
 
 def build_stack_compare_url(state: dict[str, Any], base: str, branch: str) -> str:
@@ -1377,6 +1381,230 @@ def create_stack_layer(
     refresh_stack_comments(state, verbose)
 
 
+def stack_end(verbose: bool = False) -> None:
+    state = resolve_stack(None)
+    stack_id = state["id"]
+
+    if not state["layers"]:
+        delete_stack(stack_id)
+        print(f"Stack '{stack_id}' had no PRs and was removed.")
+        return
+
+    state["status"] = "closed"
+    pr_states = refresh_stack_comments(state, verbose)
+    set_current_stack_id(None)
+
+    base = state["base_branch"]
+    if run_check(["git", "checkout", base]):
+        if verbose:
+            print(f"Switched back to '{base}'")
+    else:
+        print(f"Warning: Could not check out '{base}'", file=sys.stderr)
+
+    print(f"Stack '{stack_id}' closed with {len(state['layers'])} PR(s):")
+    for line in format_stack_tree(state, pr_states):
+        print(line)
+    print(f"After the bottom PR merges, run 'acp stack sync {stack_id}'.")
+
+
+def git_rebase_in_progress() -> bool:
+    for name in ("rebase-merge", "rebase-apply"):
+        path = run(["git", "rev-parse", "--git-path", name], quiet=True)
+        if Path(path).exists():
+            return True
+    return False
+
+
+def stack_sync(
+    stack_id: str | None = None, continue_sync: bool = False, verbose: bool = False
+) -> None:
+    """Drop merged layers, rebase the rest onto their new parents, push and retarget."""
+    state = resolve_stack(stack_id, allow_latest=True)
+    layers_by_n = {layer["n"]: layer for layer in state["layers"]}
+    progress = state.get("sync")
+
+    if continue_sync:
+        if progress is None:
+            fail(f"No interrupted sync to continue for stack '{state['id']}'")
+        if git_rebase_in_progress():
+            fail(
+                "A rebase is still in progress. Resolve conflicts, run "
+                "'git rebase --continue', then 'acp stack sync --continue'."
+            )
+        layer = layers_by_n[progress["n"]]
+        layer["parent_sha"] = progress["onto"]
+        layer["head_sha"] = run(["git", "rev-parse", layer["branch"]], quiet=True)
+        progress["rebased"].append(layer["n"])
+        resume_after = layer["n"]
+    else:
+        if progress is not None and git_rebase_in_progress():
+            fail(
+                "A previous sync stopped on a conflict. Finish it with "
+                "'acp stack sync --continue', or run 'git rebase --abort' first."
+            )
+        if not (
+            run_check(["git", "diff", "--quiet"])
+            and run_check(["git", "diff", "--cached", "--quiet"])
+        ):
+            fail("Commit or stash your changes before running 'acp stack sync'.")
+
+        if verbose:
+            print(f"Fetching '{state['base_branch']}' from '{state['base_remote']}'...")
+        if not run_check(
+            ["git", "fetch", "--quiet", state["base_remote"], state["base_branch"]]
+        ):
+            fail(
+                f"Could not fetch '{state['base_branch']}' from '{state['base_remote']}'"
+            )
+
+        pr_states = fetch_pr_states(state)
+        merged_now = []
+        for layer in state["layers"]:
+            if layer["merged"]:
+                continue
+            if pr_states.get(layer["n"]) != "MERGED":
+                break
+            layer["merged"] = True
+            merged_now.append(layer["n"])
+
+        for layer in state["layers"]:
+            if not layer["merged"] and pr_states.get(layer["n"]) == "MERGED":
+                print(
+                    f"Warning: #{layer['pr_number']} is merged but a PR below it is not",
+                    file=sys.stderr,
+                )
+
+        progress = {
+            "return_branch": run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True
+            ),
+            "merged_now": merged_now,
+            "rebased": [],
+        }
+        resume_after = 0
+
+    active = [layer for layer in state["layers"] if not layer["merged"]]
+    base_ref = f"{state['base_remote']}/{state['base_branch']}"
+
+    for i, layer in enumerate(active):
+        if layer["n"] <= resume_after:
+            continue
+        onto = run(
+            ["git", "rev-parse", base_ref if i == 0 else active[i - 1]["branch"]],
+            quiet=True,
+        )
+        if onto == layer["parent_sha"]:
+            continue
+
+        if verbose:
+            print(f"Rebasing '{layer['branch']}' onto {onto[:12]}...")
+        state["sync"] = {**progress, "n": layer["n"], "onto": onto}
+        save_stack(state)
+
+        rebase = subprocess.run(
+            [
+                "git",
+                "rebase",
+                "--quiet",
+                "--onto",
+                onto,
+                layer["parent_sha"],
+                layer["branch"],
+            ],
+            check=False,
+        )
+        if rebase.returncode != 0:
+            fail(
+                f"Rebase of '{layer['branch']}' stopped on a conflict. Resolve it, run "
+                "'git rebase --continue', then 'acp stack sync --continue'."
+            )
+
+        layer["parent_sha"] = onto
+        layer["head_sha"] = run(["git", "rev-parse", layer["branch"]], quiet=True)
+        progress["rebased"].append(layer["n"])
+
+    finish_stack_sync(state, progress, active, verbose)
+
+
+def finish_stack_sync(
+    state: dict[str, Any],
+    progress: dict[str, Any],
+    active: list[dict[str, Any]],
+    verbose: bool,
+) -> None:
+    rebased = set(progress["rebased"])
+    merged = [
+        layer for layer in state["layers"] if layer["n"] in progress["merged_now"]
+    ]
+
+    for layer in active:
+        if layer["n"] in rebased:
+            if verbose:
+                print(f"Force-pushing '{layer['branch']}'...")
+            run(
+                [
+                    "git",
+                    "push",
+                    "--quiet",
+                    "--force-with-lease",
+                    state["remote"],
+                    layer["branch"],
+                ],
+                quiet=True,
+            )
+
+    # Retarget before deleting merged branches, so GitHub never sees an open PR
+    # whose base branch is gone.
+    if state["mode"] == "stacked" and merged and active and active[0]["pr_number"]:
+        if verbose:
+            print(
+                f"Retargeting #{active[0]['pr_number']} to '{state['base_branch']}'..."
+            )
+        run_check(
+            [
+                "gh",
+                "pr",
+                "edit",
+                str(active[0]["pr_number"]),
+                "--repo",
+                state["repo"],
+                "--base",
+                state["base_branch"],
+            ]
+        )
+
+    for layer in merged:
+        if check_remote_branch_exists(state["head_repo"], layer["branch"]):
+            delete_remote_branch(state["head_repo"], layer["branch"], verbose)
+
+    merged_branches = {layer["branch"] for layer in merged}
+    return_branch = progress["return_branch"]
+    if return_branch in merged_branches:
+        return_branch = state["base_branch"]
+    run_check(["git", "checkout", return_branch])
+
+    for layer in merged:
+        delete_local_branch(layer["branch"], verbose)
+
+    state.pop("sync", None)
+    if not active:
+        state["status"] = "done"
+        if get_current_stack_id() == state["id"]:
+            set_current_stack_id(None)
+    save_stack(state)
+
+    pr_states = refresh_stack_comments(state, verbose)
+
+    print(
+        f"Stack '{state['id']}' synced: {len(merged)} merged layer(s) removed, "
+        f"{len(rebased)} layer(s) rebased."
+    )
+    for line in format_stack_tree(state, pr_states):
+        print(line)
+    if not active:
+        print("Every PR in the stack is merged.")
+
+
 def run_stack_command(
     args: argparse.Namespace, parser: argparse.ArgumentParser
 ) -> None:
@@ -1384,6 +1612,12 @@ def run_stack_command(
         stack_start(draft=args.draft, reviewers=args.reviewers, verbose=args.verbose)
     elif args.stack_command == "status":
         stack_status(args.stack_id, verbose=args.verbose)
+    elif args.stack_command == "end":
+        stack_end(verbose=args.verbose)
+    elif args.stack_command == "sync":
+        stack_sync(
+            args.stack_id, continue_sync=args.continue_sync, verbose=args.verbose
+        )
     elif args.stack_command == "abort":
         stack_abort(args.stack_id)
     else:
@@ -1549,6 +1783,29 @@ examples:
         "stack_id", nargs="?", help=argparse.SUPPRESS
     ).completer = _no_files  # type: ignore[attr-defined]
     stack_status_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_end_parser = stack_subparsers.add_parser(
+        "end", help="Finalize stack comments and return to the base branch"
+    )
+    stack_end_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_sync_parser = stack_subparsers.add_parser(
+        "sync", help="Drop merged PRs, rebase the rest and retarget them"
+    )
+    stack_sync_parser.add_argument(
+        "stack_id", nargs="?", help=argparse.SUPPRESS
+    ).completer = _no_files  # type: ignore[attr-defined]
+    stack_sync_parser.add_argument(
+        "--continue",
+        dest="continue_sync",
+        action="store_true",
+        help="Continue a sync that stopped on a rebase conflict",
+    )
+    stack_sync_parser.add_argument(
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
 

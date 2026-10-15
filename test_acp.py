@@ -2333,3 +2333,244 @@ class TestStackComment:
         saved = acp.load_stack("abc123")["layers"]
         assert [layer["comment_id"] for layer in saved] == [11, 12]
         assert saved[1]["pr_number"] == 6
+
+
+class TestStackEnd:
+    def test_end_without_stack(self):
+        with pytest.raises(SystemExit):
+            acp.stack_end()
+
+    def test_end_empty_stack(self, capsys):
+        acp.save_stack(make_stack())
+        acp.set_current_stack_id("abc123")
+        acp.stack_end()
+        assert acp.load_stack("abc123") is None
+        assert "had no PRs" in capsys.readouterr().out
+
+    def test_end_closes_stack(self, capsys):
+        acp.save_stack(make_stack(layers=[make_layer(1, 5), make_layer(2, 6)]))
+        acp.set_current_stack_id("abc123")
+        with (
+            mock.patch("acp.refresh_stack_comments", return_value={}) as mock_refresh,
+            mock.patch("acp.run_check", return_value=True) as mock_check,
+        ):
+            acp.stack_end()
+
+        assert mock_refresh.call_args[0][0]["status"] == "closed"
+        mock_check.assert_called_once_with(["git", "checkout", "main"])
+        assert acp.get_current_stack_id() is None
+        out = capsys.readouterr().out
+        assert "closed with 2 PR(s)" in out
+        assert "acp stack sync abc123" in out
+
+
+class FakeGit:
+    """Answer the git/gh calls made by stack_sync from a small table."""
+
+    def __init__(self, shas, head="main", clean=True, rebase_fails=()):
+        self.shas = shas
+        self.head = head
+        self.clean = clean
+        self.rebase_fails = set(rebase_fails)
+        self.rebases = []
+        self.pushes = []
+        self.checks = []
+
+    def run(self, cmd, quiet=False):
+        if cmd[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+            return self.head
+        if cmd[:3] == ["git", "rev-parse", "--git-path"]:
+            return "/nonexistent/" + cmd[3]
+        if cmd[:2] == ["git", "rev-parse"]:
+            return self.shas[cmd[2]]
+        if cmd[:2] == ["git", "push"]:
+            self.pushes.append(cmd[-1])
+            return ""
+        raise AssertionError(cmd)
+
+    def run_check(self, cmd):
+        self.checks.append(cmd)
+        if cmd[:2] == ["git", "diff"]:
+            return self.clean
+        return True
+
+    def subprocess_run(self, cmd, **kwargs):
+        branch = cmd[-1]
+        self.rebases.append((cmd[-3], cmd[-2], branch))
+        if branch in self.rebase_fails:
+            return mock.Mock(returncode=1)
+        self.shas[branch] = f"rebased-{branch[-1]}"
+        return mock.Mock(returncode=0)
+
+
+class TestStackSync:
+    B1 = "users/testuser/acp-abc123-1"
+    B2 = "users/testuser/acp-abc123-2"
+    B3 = "users/testuser/acp-abc123-3"
+
+    def _save(self, **overrides):
+        layers = [make_layer(1, 5), make_layer(2, 6), make_layer(3, 7)]
+        acp.save_stack(make_stack(status="closed", layers=layers, **overrides))
+
+    def _sync(self, fake, pr_states, continue_sync=False):
+        with (
+            mock.patch("acp.run", side_effect=fake.run),
+            mock.patch("acp.run_check", side_effect=fake.run_check),
+            mock.patch("subprocess.run", side_effect=fake.subprocess_run),
+            mock.patch("acp.get_pr_state", side_effect=lambda r, n: pr_states[n]),
+            mock.patch("acp.check_remote_branch_exists", return_value=True),
+            mock.patch("acp.delete_remote_branch") as mock_del_remote,
+            mock.patch("acp.delete_local_branch") as mock_del_local,
+            mock.patch("acp.refresh_stack_comments", return_value={}) as mock_refresh,
+        ):
+            acp.stack_sync("abc123", continue_sync=continue_sync)
+        return mock_del_remote, mock_del_local, mock_refresh
+
+    def _shas(self, main="newmain"):
+        return {"origin/main": main, self.B1: "sha1", self.B2: "sha2", self.B3: "sha3"}
+
+    def test_bottom_merged(self):
+        self._save()
+        fake = FakeGit(self._shas(), head=self.B3)
+        del_remote, del_local, refresh = self._sync(
+            fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"}
+        )
+
+        assert fake.rebases == [
+            ("newmain", "sha1", self.B2),
+            ("rebased-2", "sha2", self.B3),
+        ]
+        assert fake.pushes == [self.B2, self.B3]
+        assert ["gh", "pr", "edit", "6", "--repo", "owner/repo", "--base", "main"] in (
+            fake.checks
+        )
+        del_remote.assert_called_once_with("owner/repo", self.B1, False)
+        del_local.assert_called_once_with(self.B1, False)
+        assert ["git", "checkout", self.B3] in fake.checks
+
+        state = acp.load_stack("abc123")
+        assert state["layers"][0]["merged"] is True
+        assert state["layers"][1]["parent_sha"] == "newmain"
+        assert state["layers"][2]["parent_sha"] == "rebased-2"
+        assert "sync" not in state
+        refresh.assert_called_once()
+
+    def test_nothing_changed(self):
+        self._save()
+        fake = FakeGit(self._shas(main="sha0"))
+        del_remote, _, _ = self._sync(fake, {5: "OPEN", 6: "OPEN", 7: "OPEN"})
+        assert fake.rebases == []
+        assert fake.pushes == []
+        del_remote.assert_not_called()
+
+    def test_base_moved_rebases_whole_stack(self):
+        self._save()
+        fake = FakeGit(self._shas())
+        self._sync(fake, {5: "OPEN", 6: "OPEN", 7: "OPEN"})
+        assert [r[2] for r in fake.rebases] == [self.B1, self.B2, self.B3]
+        assert not any(c[:3] == ["gh", "pr", "edit"] for c in fake.checks)
+
+    def test_fallback_does_not_retarget(self):
+        self._save(mode="fallback", repo="up/repo", head_repo="me/repo")
+        fake = FakeGit(self._shas())
+        del_remote, _, _ = self._sync(fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"})
+        assert not any(c[:3] == ["gh", "pr", "edit"] for c in fake.checks)
+        del_remote.assert_called_once_with("me/repo", self.B1, False)
+
+    def test_return_to_base_when_head_was_merged(self):
+        self._save()
+        fake = FakeGit(self._shas(), head=self.B1)
+        self._sync(fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"})
+        assert fake.checks[-1] == ["git", "checkout", "main"]
+
+    def test_all_merged(self, capsys):
+        self._save()
+        acp.set_current_stack_id("abc123")
+        fake = FakeGit(self._shas())
+        self._sync(fake, {5: "MERGED", 6: "MERGED", 7: "MERGED"})
+        assert acp.load_stack("abc123")["status"] == "done"
+        assert acp.get_current_stack_id() is None
+        assert "Every PR in the stack is merged." in capsys.readouterr().out
+
+    def test_dirty_worktree(self, capsys):
+        self._save()
+        with pytest.raises(SystemExit):
+            self._sync(FakeGit(self._shas(), clean=False), {})
+        assert "Commit or stash" in capsys.readouterr().err
+
+    def test_conflict_then_continue(self, capsys):
+        self._save()
+        fake = FakeGit(self._shas(), head=self.B3, rebase_fails={self.B2})
+        with pytest.raises(SystemExit):
+            self._sync(fake, {5: "MERGED", 6: "OPEN", 7: "OPEN"})
+        assert "acp stack sync --continue" in capsys.readouterr().err
+
+        progress = acp.load_stack("abc123")["sync"]
+        assert progress["n"] == 2
+        assert progress["onto"] == "newmain"
+        assert progress["merged_now"] == [1]
+
+        fake.rebase_fails = set()
+        fake.shas[self.B2] = "resolved-2"
+        self._sync(fake, {}, continue_sync=True)
+
+        assert fake.rebases[-1] == ("resolved-2", "sha2", self.B3)
+        assert fake.pushes == [self.B2, self.B3]
+        state = acp.load_stack("abc123")
+        assert state["layers"][1]["parent_sha"] == "newmain"
+        assert "sync" not in state
+
+    def test_continue_without_progress(self, capsys):
+        self._save()
+        with pytest.raises(SystemExit):
+            self._sync(FakeGit(self._shas()), {}, continue_sync=True)
+        assert "No interrupted sync" in capsys.readouterr().err
+
+    def test_continue_while_rebase_in_progress(self, capsys):
+        self._save()
+        state = acp.load_stack("abc123")
+        state["sync"] = {
+            "n": 2,
+            "onto": "x",
+            "merged_now": [],
+            "rebased": [],
+            "return_branch": "main",
+        }
+        acp.save_stack(state)
+        with (
+            mock.patch("acp.git_rebase_in_progress", return_value=True),
+            pytest.raises(SystemExit),
+        ):
+            acp.stack_sync("abc123", continue_sync=True)
+        assert "still in progress" in capsys.readouterr().err
+
+    def test_latest_stack_used_without_id(self):
+        self._save()
+        with mock.patch("acp.finish_stack_sync"):
+            fake = FakeGit(self._shas(main="sha0"))
+            with (
+                mock.patch("acp.run", side_effect=fake.run),
+                mock.patch("acp.run_check", side_effect=fake.run_check),
+                mock.patch("acp.get_pr_state", return_value="OPEN"),
+            ):
+                acp.stack_sync()
+
+
+class TestStackEndSyncCommand:
+    @mock.patch("acp.stack_end")
+    def test_end(self, mock_end):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "end", "-v"]):
+            acp.main()
+        mock_end.assert_called_once_with(verbose=True)
+
+    @mock.patch("acp.stack_sync")
+    def test_sync_continue(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "sync", "--continue"]):
+            acp.main()
+        mock_sync.assert_called_once_with(None, continue_sync=True, verbose=False)
+
+    @mock.patch("acp.stack_sync")
+    def test_sync_with_id(self, mock_sync):
+        with mock.patch.object(sys, "argv", ["acp", "stack", "sync", "abc123"]):
+            acp.main()
+        mock_sync.assert_called_once_with("abc123", continue_sync=False, verbose=False)
