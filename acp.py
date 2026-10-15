@@ -8,10 +8,12 @@ import argparse
 import json
 import os
 import random
+import string
 import subprocess
 import sys
 import time
-from typing import Any
+from pathlib import Path
+from typing import Any, NoReturn
 
 import argcomplete
 
@@ -160,8 +162,20 @@ def get_repo_info(verbose: bool) -> tuple[str, str, bool]:
     return fork_repo, upstream_repo, is_fork
 
 
+def get_gh_user() -> str:
+    return run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+
+
+def is_acp_branch(branch: str) -> bool:
+    """Return True for acp temporary branches and acp stack layer branches."""
+    if branch.startswith("acp/"):
+        return True
+    parts = branch.split("/")
+    return len(parts) == 3 and parts[0] == "users" and parts[2].startswith("acp-")
+
+
 def generate_temp_branch_name(verbose: bool) -> str:
-    gh_user = run(["gh", "api", "user", "--jq", ".login"], quiet=True)
+    gh_user = get_gh_user()
     random_num = random.randint(1000000000000000, 9999999999999999)
     temp_branch = f"acp/{gh_user}/{random_num}"
 
@@ -478,7 +492,7 @@ def list_branches(show_all: bool = False, verbose: bool = False) -> None:
         prs = [
             pr
             for pr in json.loads(pr_result.stdout)
-            if pr["headRefName"].startswith("acp/")
+            if is_acp_branch(pr["headRefName"])
         ]
 
     if verbose:
@@ -650,7 +664,7 @@ def create_pr(
     if verbose:
         print(f"Current branch: '{original_branch}'")
 
-    if original_branch.startswith("acp/"):
+    if is_acp_branch(original_branch):
         print(
             f"Error: Already on an ACP branch '{original_branch}'. "
             "Switch to your base branch before creating a new PR.",
@@ -791,6 +805,265 @@ def create_pr(
         raise
 
 
+def fail(message: str) -> NoReturn:
+    print(f"Error: {message}", file=sys.stderr)
+    sys.exit(1)
+
+
+def get_stack_root() -> Path:
+    # The common dir is shared by all worktrees, so a stack is visible from each of them.
+    git_dir = run(["git", "rev-parse", "--git-common-dir"], quiet=True)
+    return Path(git_dir).resolve() / "acp"
+
+
+def stack_file(stack_id: str) -> Path:
+    return get_stack_root() / "stacks" / f"{stack_id}.json"
+
+
+def load_stack(stack_id: str) -> dict[str, Any] | None:
+    path = stack_file(stack_id)
+    if not path.exists():
+        return None
+    state: dict[str, Any] = json.loads(path.read_text())
+    return state
+
+
+def save_stack(state: dict[str, Any]) -> None:
+    path = stack_file(state["id"])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2) + "\n")
+
+
+def get_current_stack_id() -> str | None:
+    path = get_stack_root() / "current"
+    if not path.exists():
+        return None
+    return path.read_text().strip() or None
+
+
+def set_current_stack_id(stack_id: str | None) -> None:
+    path = get_stack_root() / "current"
+    if stack_id is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(stack_id + "\n")
+
+
+def delete_stack(stack_id: str) -> None:
+    stack_file(stack_id).unlink(missing_ok=True)
+    if get_current_stack_id() == stack_id:
+        set_current_stack_id(None)
+
+
+def load_current_stack() -> dict[str, Any] | None:
+    stack_id = get_current_stack_id()
+    return load_stack(stack_id) if stack_id else None
+
+
+def list_stacks() -> list[dict[str, Any]]:
+    """Return all known stacks, oldest first."""
+    stacks_dir = get_stack_root() / "stacks"
+    if not stacks_dir.is_dir():
+        return []
+    files = sorted(stacks_dir.glob("*.json"), key=lambda p: p.stat().st_mtime)
+    return [json.loads(p.read_text()) for p in files]
+
+
+def resolve_stack(stack_id: str | None, allow_latest: bool = False) -> dict[str, Any]:
+    """Return the requested stack, else the open stack, else (optionally) the latest unfinished one."""
+    if stack_id:
+        state = load_stack(stack_id)
+        if state is None:
+            fail(f"Stack '{stack_id}' not found")
+        return state
+
+    state = load_current_stack()
+    if state is not None:
+        return state
+
+    if allow_latest:
+        unfinished = [s for s in list_stacks() if s["status"] != "done"]
+        if unfinished:
+            return unfinished[-1]
+
+    fail("No open stack. Run 'acp stack start' first or pass a stack id.")
+
+
+def generate_stack_id() -> str:
+    return "".join(random.choices(string.ascii_lowercase + string.digits, k=6))
+
+
+def stack_branch_name(gh_user: str, stack_id: str, n: int) -> str:
+    # LLVM only allows 'users/<username>/' branches in the main repo, for stacked PRs.
+    return f"users/{gh_user}/acp-{stack_id}-{n}"
+
+
+def can_push_to_repo(repo: str) -> bool:
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repo}", "--jq", ".permissions.push"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0 and result.stdout.strip() == "true"
+
+
+def get_pr_state(repo: str, number: int) -> str:
+    """Return OPEN, DRAFT, MERGED, CLOSED, or UNKNOWN."""
+    result = subprocess.run(
+        [
+            "gh",
+            "pr",
+            "view",
+            str(number),
+            "--repo",
+            repo,
+            "--json",
+            "state,isDraft",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout.strip():
+        return "UNKNOWN"
+    data = json.loads(result.stdout)
+    if data["state"] == "OPEN" and data.get("isDraft"):
+        return "DRAFT"
+    return str(data["state"])
+
+
+def fetch_pr_states(state: dict[str, Any]) -> dict[int, str]:
+    return {
+        layer["n"]: get_pr_state(state["repo"], layer["pr_number"])
+        for layer in state["layers"]
+        if layer.get("pr_number")
+    }
+
+
+def format_stack_tree(
+    state: dict[str, Any], pr_states: dict[int, str], head_branch: str | None = None
+) -> list[str]:
+    lines = [state["base_branch"]]
+    for depth, layer in enumerate(state["layers"]):
+        indent = "   " * depth
+        pr = f"#{layer['pr_number']}" if layer.get("pr_number") else "(no PR)"
+        pr_state = pr_states.get(layer["n"], "UNKNOWN").lower()
+        line = f"{indent}└─ {pr} {layer['title']} [{pr_state}] {layer['branch']}"
+        if layer["branch"] == head_branch:
+            line += "  <- HEAD"
+        lines.append(line)
+    return lines
+
+
+def stack_start(
+    draft: bool = False, reviewers: str | None = None, verbose: bool = False
+) -> None:
+    current = load_current_stack()
+    if current is not None:
+        fail(
+            f"Stack '{current['id']}' is already open. "
+            "Run 'acp stack end' or 'acp stack abort' first."
+        )
+
+    base_branch = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
+    if base_branch == "HEAD":
+        fail("HEAD is detached. Check out the base branch before starting a stack.")
+    if is_acp_branch(base_branch):
+        fail(
+            f"Already on an ACP branch '{base_branch}'. "
+            "Switch to your base branch before starting a stack."
+        )
+
+    fork_repo, upstream_repo, is_fork = get_repo_info(verbose)
+
+    if not is_fork:
+        mode, remote, head_repo = "stacked", "origin", fork_repo
+    elif can_push_to_repo(upstream_repo):
+        mode, remote, head_repo = "stacked", "upstream", upstream_repo
+    else:
+        mode, remote, head_repo = "fallback", "origin", fork_repo
+
+    if not check_remote_branch_exists(upstream_repo, base_branch):
+        fail(f"Base branch '{base_branch}' does not exist in '{upstream_repo}'")
+
+    state: dict[str, Any] = {
+        "id": generate_stack_id(),
+        "status": "open",
+        "mode": mode,
+        "repo": upstream_repo,
+        "head_repo": head_repo,
+        "remote": remote,
+        "base_remote": "upstream" if is_fork else "origin",
+        "base_branch": base_branch,
+        "base_sha": run(["git", "rev-parse", "HEAD"], quiet=True),
+        "gh_user": get_gh_user(),
+        "defaults": {"draft": draft, "reviewers": reviewers},
+        "layers": [],
+    }
+    save_stack(state)
+    set_current_stack_id(state["id"])
+
+    print(f"Stack '{state['id']}' started on '{base_branch}' ({upstream_repo})")
+    if mode == "fallback":
+        print(
+            f"Note: no push access to '{upstream_repo}'. Every PR will target "
+            f"'{base_branch}' and include the commits of the PRs below it."
+        )
+    elif verbose:
+        print(f"Layer branches will be pushed to '{remote}' ({head_repo})")
+
+
+def stack_status(stack_id: str | None = None, verbose: bool = False) -> None:
+    if stack_id is None and load_current_stack() is None:
+        stacks = list_stacks()
+        if not stacks:
+            print("No stacks found.")
+            return
+        for s in stacks:
+            print(
+                f"  {s['id']} [{s['status']}] base '{s['base_branch']}', "
+                f"{len(s['layers'])} layer(s)"
+            )
+        return
+
+    state = resolve_stack(stack_id)
+    if verbose:
+        print(f"Querying PR states in '{state['repo']}'...")
+    pr_states = fetch_pr_states(state)
+    head = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], quiet=True)
+
+    print(
+        f"Stack '{state['id']}' [{state['status']}, {state['mode']}] in {state['repo']}"
+    )
+    for line in format_stack_tree(state, pr_states, head):
+        print(line)
+
+
+def stack_abort(stack_id: str | None = None) -> None:
+    state = resolve_stack(stack_id)
+    delete_stack(state["id"])
+    print(
+        f"Stack '{state['id']}' aborted. Local stack state was removed; "
+        "PRs and branches were left untouched."
+    )
+
+
+def run_stack_command(
+    args: argparse.Namespace, parser: argparse.ArgumentParser
+) -> None:
+    if args.stack_command == "start":
+        stack_start(draft=args.draft, reviewers=args.reviewers, verbose=args.verbose)
+    elif args.stack_command == "status":
+        stack_status(args.stack_id, verbose=args.verbose)
+    elif args.stack_command == "abort":
+        stack_abort(args.stack_id)
+    else:
+        parser.print_help()
+        sys.exit(0)
+
+
 class _NoFilesCompleter:
     suppress = True
 
@@ -919,6 +1192,46 @@ examples:
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
 
+    stack_parser = subparsers.add_parser("stack", help="Manage stacked PRs")
+    stack_subparsers = stack_parser.add_subparsers(dest="stack_command")
+
+    stack_start_parser = stack_subparsers.add_parser(
+        "start", help="Start a stack on the current branch"
+    )
+    stack_start_parser.add_argument(
+        "-d",
+        "--draft",
+        action="store_true",
+        help="Create every PR in the stack as a draft",
+    )
+    stack_start_parser.add_argument(
+        "-r",
+        "--reviewers",
+        type=str,
+        default=None,
+        help="Comma-separated list of reviewers for every PR in the stack",
+    )
+    stack_start_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_status_parser = stack_subparsers.add_parser(
+        "status", help="Show stack topology and PR states"
+    )
+    stack_status_parser.add_argument(
+        "stack_id", nargs="?", help=argparse.SUPPRESS
+    ).completer = _no_files  # type: ignore[attr-defined]
+    stack_status_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    stack_abort_parser = stack_subparsers.add_parser(
+        "abort", help="Forget local stack state, leave PRs and branches untouched"
+    )
+    stack_abort_parser.add_argument(
+        "stack_id", nargs="?", help=argparse.SUPPRESS
+    ).completer = _no_files  # type: ignore[attr-defined]
+
     argcomplete.autocomplete(parser, default_completer=_no_files)  # type: ignore[arg-type]
     args = parser.parse_args()
 
@@ -933,6 +1246,8 @@ examples:
             sync_fork(branch=args.branch, verbose=args.verbose)
         elif args.command == "branches":
             list_branches(show_all=args.all, verbose=args.verbose)
+        elif args.command == "stack":
+            run_stack_command(args, stack_parser)
         elif args.command == "checkout":
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)
