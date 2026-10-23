@@ -89,6 +89,26 @@ acp pr "feat: feature" --auto-merge --merge-method rebase
 When merging branch immediately, temporary local branch and \
 remote tracking branch will also be deleted to keep workspace clean.
 
+### Stacked PRs
+
+Split a large change into a chain of small PRs, each reviewed on its own diff:
+
+```bash
+acp stack start               # open a stack on the current branch (-d makes every PR a draft)
+git add -p
+acp pr "feat: part 1"         # PR -> main
+git add -p
+acp pr "feat: part 2"         # PR -> part 1
+acp stack end                 # return to the base branch
+
+acp stack status              # show the stack and PR states
+acp stack sync                # after the bottom PR merges: rebase and retarget the rest
+```
+
+Every PR gets a comment showing the whole stack, kept up to date by `acp`. In forks, layer branches are pushed to
+`upstream` as `users/<you>/acp-*` when you have write access (as LLVM committers do). Otherwise every PR targets the
+base branch and the comment links to each PR's own commit. See [docs/stacking.md](docs/stacking.md) for details.
+
 ## Contributing
 
 Contributions welcome! Please open an issue if you have an idea or submit a pull request.
