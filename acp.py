@@ -8,9 +8,11 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
 
 import argcomplete
@@ -574,13 +576,14 @@ def sync_fork(branch: str = "main", verbose: bool = False) -> None:
     print(f"Fork synced with upstream ({branch})")
 
 
-def pull(verbose: bool = False) -> None:
-    """Pull latest changes, recursing into submodules if any are out of sync."""
+def get_pull_command(cwd: str | None = None, verbose: bool = False) -> list[str]:
+    """Return the git pull command, recursing into submodules if any are out of sync."""
     submodule_result = subprocess.run(
         ["git", "submodule", "status"],
         capture_output=True,
         text=True,
         check=False,
+        cwd=cwd,
     )
 
     has_submodules = (
@@ -599,9 +602,203 @@ def pull(verbose: bool = False) -> None:
             print("Running: git pull")
         cmd = ["git", "pull"]
 
-    result = subprocess.run(cmd, check=False)
+    return cmd
+
+
+def pull(verbose: bool = False) -> None:
+    """Pull latest changes, recursing into submodules if any are out of sync."""
+    result = subprocess.run(get_pull_command(verbose=verbose), check=False)
     if result.returncode != 0:
         sys.exit(result.returncode)
+
+
+ORG_REPO_LIMIT = 10000
+GITHUB_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9-]*$")
+
+
+def parse_org_name(value: str) -> str | None:
+    """Extract a GitHub organization name from a plain name or a GitHub URL.
+
+    Accepts 'org', 'github.com/org', 'https://github.com/org' and
+    'https://github.com/orgs/org/...'. Returns None for anything else.
+    """
+    name = value.strip().split("?")[0].split("#")[0].rstrip("/")
+    for prefix in ("https://", "http://"):
+        if name.startswith(prefix):
+            name = name[len(prefix) :]
+            break
+    name = name.removeprefix("www.")
+
+    if name.startswith("github.com/"):
+        parts = name[len("github.com/") :].split("/")
+        if len(parts) >= 2 and parts[0] == "orgs":
+            name = parts[1]
+        elif len(parts) == 1:
+            name = parts[0]
+        else:
+            return None
+
+    return name if GITHUB_NAME_RE.match(name) else None
+
+
+def list_org_repos(org: str) -> list[str]:
+    """Return names of all repositories in a GitHub organization."""
+    result = subprocess.run(
+        ["gh", "repo", "list", org, "--limit", str(ORG_REPO_LIMIT), "--json", "name"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        print(
+            f"Error: Failed to list repositories for '{org}': {result.stderr.strip()}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return sorted((repo["name"] for repo in json.loads(result.stdout)), key=str.lower)
+
+
+def find_git_repos(path: str = ".") -> list[str]:
+    """Return names of direct subdirectories of path that are git repositories."""
+    return sorted(
+        (entry.name for entry in Path(path).iterdir() if (entry / ".git").exists()),
+        key=str.lower,
+    )
+
+
+def get_head(cwd: str) -> str | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=cwd,
+    )
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def run_repo_command(
+    cmd: list[str], verbose: bool, cwd: str | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run a command for one repo: stream output if verbose, capture it otherwise."""
+    sys.stdout.flush()  # Keep our output ordered with the subprocess output.
+    if verbose:
+        return subprocess.run(cmd, text=True, check=False, cwd=cwd)
+    return subprocess.run(cmd, capture_output=True, text=True, check=False, cwd=cwd)
+
+
+def failure_details(result: subprocess.CompletedProcess[str]) -> str:
+    """Extract the reason of a failed git/gh command from its captured output."""
+    if result.stdout is None and result.stderr is None:
+        return ""  # Output was streamed to the terminal already.
+    for text in (result.stderr or "", result.stdout or ""):
+        lines = [
+            line.rstrip()
+            for line in text.splitlines()
+            if line.strip() and not line.startswith(("hint:", "Cloning into"))
+        ]
+        if lines:
+            return "\n".join(lines)
+    return f"exit code {result.returncode}"
+
+
+def start_repo_status(name: str, verbose: bool) -> None:
+    if verbose:
+        print(f"==> {name}", flush=True)
+    else:
+        print(f"{name}: ", end="", flush=True)
+
+
+def finish_repo_status(
+    name: str, status: str, verbose: bool, details: str = ""
+) -> None:
+    print(f"{name}: {status}" if verbose else status)
+    for line in details.splitlines():
+        print(f"    {line}")
+
+
+def clone_org(org: str, verbose: bool = False) -> None:
+    """Clone all repositories of an organization into ./<org>, skipping existing ones."""
+    org_name = parse_org_name(org)
+    if org_name is None:
+        print(f"Error: Invalid organization name or URL: '{org}'", file=sys.stderr)
+        sys.exit(1)
+
+    org_dir = Path(org_name)
+    if org_dir.exists() and not org_dir.is_dir():
+        print(f"Error: '{org_name}' exists and is not a directory", file=sys.stderr)
+        sys.exit(1)
+
+    repos = list_org_repos(org_name)
+    if not repos:
+        print(f"No repositories found in '{org_name}'")
+        return
+
+    org_dir.mkdir(exist_ok=True)
+    print(f"Cloning {len(repos)} repositories from '{org_name}' into ./{org_name}")
+
+    cloned = 0
+    skipped = 0
+    failed: list[str] = []
+    for repo in repos:
+        dest = org_dir / repo
+        if dest.exists():
+            print(f"{repo}: already exists, skipping")
+            skipped += 1
+            continue
+
+        start_repo_status(repo, verbose)
+        result = run_repo_command(
+            ["gh", "repo", "clone", f"{org_name}/{repo}", str(dest)], verbose
+        )
+        if result.returncode == 0:
+            finish_repo_status(repo, "cloned", verbose)
+            cloned += 1
+        else:
+            finish_repo_status(repo, "failed", verbose, failure_details(result))
+            failed.append(repo)
+
+    print(
+        f"Done: {cloned} cloned, {skipped} already present, {len(failed)} failed",
+        flush=True,
+    )
+    if failed:
+        print(f"Error: Failed to clone: {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
+
+
+def pull_org(verbose: bool = False) -> None:
+    """Run 'acp pull' in every git repository inside the current directory."""
+    repos = find_git_repos()
+    if not repos:
+        print(
+            "Error: No git repositories found in the current directory. "
+            "Run 'acp org pull' from a directory created by 'acp org clone'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f"Pulling {len(repos)} repositories in {Path.cwd()}")
+
+    failed: list[str] = []
+    for repo in repos:
+        start_repo_status(repo, verbose)
+        head_before = get_head(repo)
+        result = run_repo_command(
+            get_pull_command(cwd=repo, verbose=verbose), verbose, cwd=repo
+        )
+        if result.returncode != 0:
+            finish_repo_status(repo, "failed", verbose, failure_details(result))
+            failed.append(repo)
+            continue
+
+        status = "already up to date" if get_head(repo) == head_before else "updated"
+        finish_repo_status(repo, status, verbose)
+
+    print(f"Done: {len(repos) - len(failed)} pulled, {len(failed)} failed", flush=True)
+    if failed:
+        print(f"Error: Failed to pull: {', '.join(failed)}", file=sys.stderr)
+        sys.exit(1)
 
 
 def fetch_upstream_branch(branch: str) -> None:
@@ -919,6 +1116,30 @@ examples:
         "-v", "--verbose", action="store_true", help="Show detailed output"
     )
 
+    org_parser = subparsers.add_parser(
+        "org", help="Work with all repositories of a GitHub organization"
+    )
+    org_subparsers = org_parser.add_subparsers(dest="org_command")
+
+    org_clone_parser = org_subparsers.add_parser(
+        "clone",
+        help="Clone all repositories of an organization into ./<org>, "
+        "skipping ones already present",
+    )
+    org_clone_parser.add_argument(
+        "org", help="Organization name or GitHub URL"
+    ).completer = _no_files  # type: ignore[attr-defined]
+    org_clone_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
+    org_pull_parser = org_subparsers.add_parser(
+        "pull", help="Run 'acp pull' in every repository in the current directory"
+    )
+    org_pull_parser.add_argument(
+        "-v", "--verbose", action="store_true", help="Show detailed output"
+    )
+
     argcomplete.autocomplete(parser, default_completer=_no_files)  # type: ignore[arg-type]
     args = parser.parse_args()
 
@@ -933,6 +1154,14 @@ examples:
             sync_fork(branch=args.branch, verbose=args.verbose)
         elif args.command == "branches":
             list_branches(show_all=args.all, verbose=args.verbose)
+        elif args.command == "org":
+            if args.org_command == "clone":
+                clone_org(args.org, verbose=args.verbose)
+            elif args.org_command == "pull":
+                pull_org(verbose=args.verbose)
+            else:
+                org_parser.print_help()
+                sys.exit(0)
         elif args.command == "checkout":
             if not args.branch:
                 print("Error: Branch name required for checkout", file=sys.stderr)

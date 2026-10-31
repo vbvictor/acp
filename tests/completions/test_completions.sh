@@ -54,6 +54,7 @@ assert_has "$completions" "checkout" "acp <TAB>"
 assert_has "$completions" "branches" "acp <TAB>"
 assert_has "$completions" "sync" "acp <TAB>"
 assert_has "$completions" "pull" "acp <TAB>"
+assert_has "$completions" "org" "acp <TAB>"
 assert_not_has "$completions" ".py" "acp <TAB> (no files)"
 pass "acp <TAB>: shows subcommands, no files"
 
@@ -141,6 +142,32 @@ assert_has "$completions" "--verbose" "acp pull -<TAB>"
 assert_has "$completions" "-v" "acp pull -<TAB>"
 assert_not_has "$completions" "--merge" "acp pull -<TAB> (no pr options)"
 pass "acp pull -<TAB>: shows pull options, no other options leak"
+
+# =============================================================================
+# Org subcommand: "acp org <TAB>", "acp org clone -<TAB>", "acp org pull -<TAB>"
+# =============================================================================
+
+completions=$(get_completions "acp org ")
+assert_has "$completions" "clone" "acp org <TAB>"
+assert_has "$completions" "pull" "acp org <TAB>"
+assert_not_has "$completions" ".py" "acp org <TAB> (no files)"
+pass "acp org <TAB>: shows org subcommands, no files"
+
+completions=$(get_completions "acp org clone ")
+assert_not_has "$completions" ".py" "acp org clone <TAB> (no files)"
+pass "acp org clone <TAB>: no file completions"
+
+completions=$(get_completions "acp org clone -")
+assert_has "$completions" "--verbose" "acp org clone -<TAB>"
+assert_has "$completions" "-v" "acp org clone -<TAB>"
+assert_not_has "$completions" "--merge" "acp org clone -<TAB> (no pr options)"
+pass "acp org clone -<TAB>: shows org clone options, no other options leak"
+
+completions=$(get_completions "acp org pull -")
+assert_has "$completions" "--verbose" "acp org pull -<TAB>"
+assert_has "$completions" "-v" "acp org pull -<TAB>"
+assert_not_has "$completions" "--merge" "acp org pull -<TAB> (no pr options)"
+pass "acp org pull -<TAB>: shows org pull options, no other options leak"
 
 echo ""
 echo -e "${GREEN}All completion tests passed!${NC}"
