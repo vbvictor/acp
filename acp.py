@@ -17,7 +17,7 @@ from typing import Any
 
 import argcomplete
 
-__version__ = "1.8.0"
+__version__ = "1.9.0"
 
 
 def run(cmd: list[str], quiet: bool = False) -> str:
