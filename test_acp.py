@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from pathlib import Path
 from unittest import mock
 
 import pytest
@@ -1817,6 +1818,375 @@ class TestPullCommand:
         with mock.patch.object(sys, "argv", ["acp", "pull", "--verbose"]):
             acp.main()
             mock_pull.assert_called_once_with(verbose=True)
+
+
+class TestParseOrgName:
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "clang-tidy-infra",
+            "  clang-tidy-infra  ",
+            "github.com/clang-tidy-infra",
+            "https://github.com/clang-tidy-infra",
+            "https://github.com/clang-tidy-infra/",
+            "http://github.com/clang-tidy-infra",
+            "https://www.github.com/clang-tidy-infra",
+            "https://github.com/clang-tidy-infra?tab=repositories",
+            "https://github.com/orgs/clang-tidy-infra",
+            "https://github.com/orgs/clang-tidy-infra/repositories",
+        ],
+    )
+    def test_valid(self, value):
+        assert acp.parse_org_name(value) == "clang-tidy-infra"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "https://github.com/clang-tidy-infra/CTIT",
+            "https://gitlab.com/clang-tidy-infra",
+            "-clang-tidy-infra",
+            "..",
+            "../etc",
+            "org/repo",
+        ],
+    )
+    def test_invalid(self, value):
+        assert acp.parse_org_name(value) is None
+
+
+class TestListOrgRepos:
+    @mock.patch("subprocess.run")
+    def test_returns_sorted_names(self, mock_run):
+        mock_run.return_value = mock.Mock(
+            returncode=0,
+            stdout=json.dumps([{"name": "workflows"}, {"name": "CTIT"}, {"name": "b"}]),
+            stderr="",
+        )
+        assert acp.list_org_repos("org") == ["b", "CTIT", "workflows"]
+        cmd = mock_run.call_args[0][0]
+        assert cmd[:4] == ["gh", "repo", "list", "org"]
+        assert "--limit" in cmd
+
+    @mock.patch("subprocess.run")
+    def test_failure_exits(self, mock_run, capsys):
+        mock_run.return_value = mock.Mock(
+            returncode=1, stdout="", stderr="Could not resolve to a RepositoryOwner"
+        )
+        with pytest.raises(SystemExit) as exc:
+            acp.list_org_repos("nope")
+        assert exc.value.code == 1
+        assert "Could not resolve to a RepositoryOwner" in capsys.readouterr().err
+
+
+class TestFindGitRepos:
+    def test_finds_only_git_repos(self, tmp_path):
+        (tmp_path / "b-repo" / ".git").mkdir(parents=True)
+        (tmp_path / "A-repo" / ".git").mkdir(parents=True)
+        (tmp_path / "worktree").mkdir()
+        (tmp_path / "worktree" / ".git").write_text("gitdir: elsewhere")
+        (tmp_path / "not-a-repo").mkdir()
+        (tmp_path / "file.txt").write_text("")
+        assert acp.find_git_repos(str(tmp_path)) == ["A-repo", "b-repo", "worktree"]
+
+
+class FakeOrgGit:
+    """Fake subprocess.run for org commands, dispatching on the command and cwd."""
+
+    def __init__(self, repos=(), clone_fail=(), pull_fail=None, updated=()):
+        self.repos = list(repos)
+        self.clone_fail = set(clone_fail)
+        self.pull_fail = pull_fail or {}
+        self.updated = set(updated)
+        self.pulled: set[str] = set()
+        self.calls: list[tuple[list[str], str | None, dict]] = []
+
+    def __call__(self, cmd, cwd=None, **kwargs):
+        self.calls.append((cmd, cwd, kwargs))
+        ok = mock.Mock(returncode=0, stdout="", stderr="")
+        if cmd[:3] == ["gh", "repo", "list"]:
+            names = [{"name": name} for name in self.repos]
+            return mock.Mock(returncode=0, stdout=json.dumps(names), stderr="")
+        if cmd[:3] == ["gh", "repo", "clone"]:
+            repo, dest = cmd[3].split("/")[1], cmd[4]
+            if repo in self.clone_fail:
+                return mock.Mock(
+                    returncode=1,
+                    stdout="",
+                    stderr=f"Cloning into '{dest}'...\nfatal: repository not found\n",
+                )
+            Path(dest, ".git").mkdir(parents=True)
+            return ok
+        if cmd == ["git", "rev-parse", "HEAD"]:
+            head = "new" if cwd in self.pulled and cwd in self.updated else "old"
+            return mock.Mock(returncode=0, stdout=f"{head}\n", stderr="")
+        if cmd == ["git", "submodule", "status"]:
+            return ok
+        if cmd[:2] == ["git", "pull"]:
+            if cwd in self.pull_fail:
+                return mock.Mock(returncode=1, stdout="", stderr=self.pull_fail[cwd])
+            self.pulled.add(cwd)
+            return ok
+        msg = f"unexpected command: {cmd}"
+        raise AssertionError(msg)
+
+    def commands(self, prefix):
+        return [
+            (cmd, cwd) for cmd, cwd, _ in self.calls if cmd[: len(prefix)] == prefix
+        ]
+
+
+class TestCloneOrg:
+    def test_clones_all_repos_into_org_dir(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        fake = FakeOrgGit(repos=["CTIT", "workflows"])
+        with mock.patch("subprocess.run", side_effect=fake):
+            acp.clone_org("https://github.com/clang-tidy-infra")
+
+        clones = [cmd for cmd, _ in fake.commands(["gh", "repo", "clone"])]
+        assert clones == [
+            [
+                "gh",
+                "repo",
+                "clone",
+                "clang-tidy-infra/CTIT",
+                str(Path("clang-tidy-infra", "CTIT")),
+            ],
+            [
+                "gh",
+                "repo",
+                "clone",
+                "clang-tidy-infra/workflows",
+                str(Path("clang-tidy-infra", "workflows")),
+            ],
+        ]
+        assert (tmp_path / "clang-tidy-infra" / "CTIT").is_dir()
+        out = capsys.readouterr().out
+        assert "CTIT: cloned" in out
+        assert "Done: 2 cloned, 0 already present, 0 failed" in out
+
+    def test_clones_only_missing_repos(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "org" / "CTIT").mkdir(parents=True)
+        fake = FakeOrgGit(repos=["CTIT", "workflows"])
+        with mock.patch("subprocess.run", side_effect=fake):
+            acp.clone_org("org")
+
+        clones = [cmd[3] for cmd, _ in fake.commands(["gh", "repo", "clone"])]
+        assert clones == ["org/workflows"]
+        out = capsys.readouterr().out
+        assert "CTIT: already exists, skipping" in out
+        assert "Done: 1 cloned, 1 already present, 0 failed" in out
+
+    def test_failed_clone_is_reported_and_skipped(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        fake = FakeOrgGit(repos=["a", "broken", "c"], clone_fail=["broken"])
+        with (
+            mock.patch("subprocess.run", side_effect=fake),
+            pytest.raises(SystemExit) as exc,
+        ):
+            acp.clone_org("org")
+        assert exc.value.code == 1
+
+        clones = [cmd[3] for cmd, _ in fake.commands(["gh", "repo", "clone"])]
+        assert clones == ["org/a", "org/broken", "org/c"]
+        captured = capsys.readouterr()
+        assert "broken: failed\n    fatal: repository not found" in captured.out
+        assert "Cloning into" not in captured.out
+        assert "Done: 2 cloned, 0 already present, 1 failed" in captured.out
+        assert "Failed to clone: broken" in captured.err
+
+    def test_verbose_streams_output(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        fake = FakeOrgGit(repos=["CTIT"])
+        with mock.patch("subprocess.run", side_effect=fake):
+            acp.clone_org("org", verbose=True)
+
+        _, _, kwargs = next(
+            c for c in fake.calls if c[0][:3] == ["gh", "repo", "clone"]
+        )
+        assert "capture_output" not in kwargs
+        out = capsys.readouterr().out
+        assert "==> CTIT" in out
+        assert "CTIT: cloned" in out
+
+    def test_invalid_org_exits(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        with mock.patch("subprocess.run") as mock_run, pytest.raises(SystemExit) as exc:
+            acp.clone_org("https://github.com/org/repo")
+        assert exc.value.code == 1
+        mock_run.assert_not_called()
+        assert "Invalid organization" in capsys.readouterr().err
+
+    def test_org_path_is_a_file_exits(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "org").write_text("")
+        with mock.patch("subprocess.run") as mock_run, pytest.raises(SystemExit) as exc:
+            acp.clone_org("org")
+        assert exc.value.code == 1
+        mock_run.assert_not_called()
+        assert "not a directory" in capsys.readouterr().err
+
+    def test_no_repos(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        fake = FakeOrgGit(repos=[])
+        with mock.patch("subprocess.run", side_effect=fake):
+            acp.clone_org("org")
+        assert "No repositories found" in capsys.readouterr().out
+        assert not (tmp_path / "org").exists()
+
+
+class TestPullOrg:
+    @staticmethod
+    def make_repos(tmp_path, *names):
+        for name in names:
+            (tmp_path / name / ".git").mkdir(parents=True)
+
+    def test_pulls_every_repo(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        self.make_repos(tmp_path, "CTIT", "workflows")
+        (tmp_path / "notes").mkdir()
+        fake = FakeOrgGit(updated=["workflows"])
+        with mock.patch("subprocess.run", side_effect=fake):
+            acp.pull_org()
+
+        pulls = fake.commands(["git", "pull"])
+        assert pulls == [(["git", "pull"], "CTIT"), (["git", "pull"], "workflows")]
+        out = capsys.readouterr().out
+        assert "CTIT: already up to date" in out
+        assert "workflows: updated" in out
+        assert "Done: 2 pulled, 0 failed" in out
+
+    def test_failed_pull_is_reported_and_skipped(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        self.make_repos(tmp_path, "a", "dirty", "z")
+        fake = FakeOrgGit(
+            pull_fail={
+                "dirty": "error: Your local changes to the following files would "
+                "be overwritten by merge:\n\tfile.txt\n"
+                "hint: some hint\nAborting\n"
+            }
+        )
+        with (
+            mock.patch("subprocess.run", side_effect=fake),
+            pytest.raises(SystemExit) as exc,
+        ):
+            acp.pull_org()
+        assert exc.value.code == 1
+
+        assert [cwd for _, cwd in fake.commands(["git", "pull"])] == ["a", "dirty", "z"]
+        captured = capsys.readouterr()
+        assert (
+            "dirty: failed\n"
+            "    error: Your local changes to the following files would be "
+            "overwritten by merge:\n"
+            "    \tfile.txt\n"
+            "    Aborting\n"
+        ) in captured.out
+        assert "some hint" not in captured.out
+        assert "Done: 2 pulled, 1 failed" in captured.out
+        assert "Failed to pull: dirty" in captured.err
+
+    def test_failure_falls_back_to_stdout_then_exit_code(self):
+        result = subprocess.CompletedProcess(
+            ["git", "pull"], 1, stdout="CONFLICT (content): in x\n", stderr=""
+        )
+        assert acp.failure_details(result) == "CONFLICT (content): in x"
+        result = subprocess.CompletedProcess(["git", "pull"], 128, stdout="", stderr="")
+        assert acp.failure_details(result) == "exit code 128"
+
+    def test_recurses_submodules_when_out_of_sync(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        self.make_repos(tmp_path, "CTIT")
+        fake = FakeOrgGit()
+        original = fake.__call__
+
+        def with_submodules(cmd, cwd=None, **kwargs):
+            if cmd == ["git", "submodule", "status"]:
+                fake.calls.append((cmd, cwd, kwargs))
+                return mock.Mock(returncode=0, stdout="+abc123 sub\n", stderr="")
+            return original(cmd, cwd=cwd, **kwargs)
+
+        with mock.patch("subprocess.run", side_effect=with_submodules):
+            acp.pull_org()
+
+        assert fake.commands(["git", "submodule"]) == [
+            (["git", "submodule", "status"], "CTIT")
+        ]
+        assert fake.commands(["git", "pull"]) == [
+            (["git", "pull", "--recurse-submodules"], "CTIT")
+        ]
+
+    def test_verbose_streams_output(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        self.make_repos(tmp_path, "CTIT")
+        fake = FakeOrgGit()
+        with mock.patch("subprocess.run", side_effect=fake):
+            acp.pull_org(verbose=True)
+
+        _, _, kwargs = next(c for c in fake.calls if c[0][:2] == ["git", "pull"])
+        assert "capture_output" not in kwargs
+        out = capsys.readouterr().out
+        assert "==> CTIT" in out
+        assert "Running: git pull" in out
+        assert "CTIT: already up to date" in out
+
+    def test_no_repos_exits(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "notes").mkdir()
+        with mock.patch("subprocess.run") as mock_run, pytest.raises(SystemExit) as exc:
+            acp.pull_org()
+        assert exc.value.code == 1
+        mock_run.assert_not_called()
+        assert "No git repositories found" in capsys.readouterr().err
+
+
+class TestOrgCommand:
+    @mock.patch("acp.clone_org")
+    def test_org_clone(self, mock_clone):
+        with mock.patch.object(
+            sys, "argv", ["acp", "org", "clone", "clang-tidy-infra"]
+        ):
+            acp.main()
+            mock_clone.assert_called_once_with("clang-tidy-infra", verbose=False)
+
+    @mock.patch("acp.clone_org")
+    def test_org_clone_url_verbose(self, mock_clone):
+        url = "https://github.com/clang-tidy-infra"
+        with mock.patch.object(sys, "argv", ["acp", "org", "clone", url, "-v"]):
+            acp.main()
+            mock_clone.assert_called_once_with(url, verbose=True)
+
+    def test_org_clone_requires_org(self, capsys):
+        with (
+            mock.patch.object(sys, "argv", ["acp", "org", "clone"]),
+            pytest.raises(SystemExit) as exc,
+        ):
+            acp.main()
+        assert exc.value.code == 2
+
+    @mock.patch("acp.pull_org")
+    def test_org_pull(self, mock_pull_org):
+        with mock.patch.object(sys, "argv", ["acp", "org", "pull"]):
+            acp.main()
+            mock_pull_org.assert_called_once_with(verbose=False)
+
+    @mock.patch("acp.pull_org")
+    def test_org_pull_verbose(self, mock_pull_org):
+        with mock.patch.object(sys, "argv", ["acp", "org", "pull", "--verbose"]):
+            acp.main()
+            mock_pull_org.assert_called_once_with(verbose=True)
+
+    def test_org_without_subcommand_prints_help(self, capsys):
+        with (
+            mock.patch.object(sys, "argv", ["acp", "org"]),
+            pytest.raises(SystemExit) as exc,
+        ):
+            acp.main()
+        assert exc.value.code == 0
+        out = capsys.readouterr().out
+        assert "clone" in out
+        assert "pull" in out
 
 
 if __name__ == "__main__":
